@@ -160,7 +160,48 @@ const CHORD_SETS = {                          // hold RT / LT (keyboard Q / B); 
 const chordFor = (rt, lt) => rt||lt ? CHORD_SETS[state.sound][rt&&lt ? "both" : rt ? "rt" : "lt"] : null;
 const MODES = ["off","last","all","play"];     // what you hear (LB cycles it): this section / previous + this / the song up to here / the whole song
 const MODE_LABEL = {off:"this section", last:"previous + this", all:"song up to here", play:"whole song"};
-const KEYS = {play:" ", rec:"r", clear:"c", octDown:"z", octUp:"x", metro:"m", exp:"v", volDown:"[", volUp:"]", barsDown:",", barsUp:".", addSong:"n", scope:"/", tempoDown:"-", tempoUp:"="};
+// ---------- controls: rebind things here ----------
+// DO: every action a key or button can trigger. KEYMAP / PADMAP below say which key or button does what,
+// and the on-screen help is generated from them. (Piano keys are PIANO above, drum keys are DRUMS above.)
+const DO = {
+  play:() => actions.play(), rec:() => actions.rec(), clearLane:() => actions.clear(), metro:() => actions.metro(), soundSet:() => actions.sound(),
+  octDown:() => actions.oct(-1), octUp:() => actions.oct(1), volDown:() => actions.vol(-.1), volUp:() => actions.vol(.1),
+  barsDown:() => actions.bars(-1), barsUp:() => actions.bars(1), tempoDown:() => actions.bpm(-5), tempoUp:() => actions.bpm(5),
+  secPrev:() => actions.secGo(state.sec-1), secNext:() => actions.secGo(state.sec+1), newSection:() => actions.secNew(), secDelete:() => actions.secDel(),
+  hearCycle:() => actions.scope(), export:() => openModal(), undo:() => actions.undo(),
+  copyBars:() => actions.barsCopy(), pasteBars:() => actions.barsPaste(), songs:() => openSongs(), backup:() => backupSong(),
+};
+const KEYMAP = [          // keys are event.key in lower case; several keys on a row map to the actions listed in the same order
+  {keys:[" "], act:["play"], label:"play"},
+  {keys:["r"], act:["rec"], label:"record"},
+  {keys:["c"], act:["clearLane"], label:"clear lane"},
+  {keys:["m"], act:["metro"], label:"metronome"},
+  {keys:["z","x"], act:["octDown","octUp"], label:"octave"},
+  {keys:["[","]"], act:["volDown","volUp"], label:"volume"},
+  {keys:[",","."], act:["barsDown","barsUp"], label:"loop length"},
+  {keys:["-","="], act:["tempoDown","tempoUp"], label:"tempo"},
+  {keys:["arrowleft","arrowright"], act:["secPrev","secNext"], label:"section"},
+  {keys:["n"], act:["newSection"], label:"new section"},
+  {keys:["delete"], act:["secDelete"], label:"delete section"},
+  {keys:["/"], act:["hearCycle"], label:"what you hear"},
+  {keys:["v"], act:["export"], label:"export"},
+  {ctrl:true, keys:["z"], act:["undo"], label:"undo"},
+  {ctrl:true, keys:["c","v"], act:["copyBars","pasteBars"], label:"copy / paste bars"},
+  {ctrl:true, keys:["o","s"], act:["songs","backup"], label:"songs / backup file"},
+];
+const KEY_REPEAT = new Set(["secPrev","secNext"]);       // actions that keep firing while the key is held
+const CHORD_KEYS = {q:"rt", b:"lt"};                      // hold for the major / minor chord (rt = right trigger's role, lt = left's)
+const PAD_BTN = {4:"LB", 5:"RB", 8:"View", 9:"Start", 10:"L3", 11:"R3"};
+const PADMAP = [          // press: act. tap/hold: tap on release, hold after HOLD_MS. (notes, chords and sticks are in the controller code below)
+  {btn:9, act:"rec", label:"record"}, {btn:8, act:"play", label:"play"},
+  {btn:10, act:"soundSet", label:"sound set"}, {btn:11, act:"metro", label:"metronome"},
+  {btn:5, tap:"clearLane", hold:"undo", label:"tap clear lane \u00b7 hold undo"},
+  {btn:4, tap:"hearCycle", label:"tap what you hear \u00b7 hold + right stick \u25c0\u25b6 tempo"},
+];
+const PAD_MODIFIER = 4, HOLD_MS = 500;                    // hold LB + right stick left/right = tempo
+const PAD_STICK_HELP = ["right stick \u25b2\u25bc lane \u00b7 \u25c0\u25b6 section (past the last = new)", "left stick \u25b2\u25bc volume \u00b7 \u25c0\u25b6 octave"];
+const keyAction = {}, ctrlAction = {};
+KEYMAP.forEach(r => r.keys.forEach((k, i) => { (r.ctrl ? ctrlAction : keyAction)[k] = r.act[i]; }));
 
 // ---------- state ----------
 const state = {sound:"nes", armed:false, song:[], sec:0, songMode:"off", playSec:-1, cur:0, clips:Array(CLIP_SLOTS).fill(null),
@@ -477,8 +518,9 @@ const slotText = i => state.clips[i] ? "slot "+(i+1)+" · "+state.clips[i].lane+
 state.sec = Math.min(state.sec, state.song.length-1); loadSection(state.sec); ready = true;
 
 // ---------- keyboard ----------
-const held = {}, chordKeys = new Set();           // hold Q = major chord, hold B = minor chord (keyboard)
-const keyChord = () => chordFor(chordKeys.has("q"), chordKeys.has("b"));
+const held = {}, chordKeys = new Set();           // chord keys currently held (CHORD_KEYS)
+const chordKeyFor = role => Object.keys(CHORD_KEYS).find(k => CHORD_KEYS[k]===role);
+const keyChord = () => chordFor(chordKeys.has(chordKeyFor("rt")), chordKeys.has(chordKeyFor("lt")));
 function noteDown(key){
   if (CHANNELS[state.ch].kind==="noise"){ const d = DRUMS.find(d=>d.key===key); if (!d) return false; trigger(key, null, d); }
   else { if (!(key in PIANO)) return false; trigger(key, PIANO[key], null, keyChord()); }
@@ -513,32 +555,17 @@ window.addEventListener("keydown", e => {
   if (e.key==="Escape"){ closeModal(); sel = null; return; }
   if (e.key==="Backspace" && sel && !e.target.matches("input,textarea")){ actions.barsClear(); e.preventDefault(); return; }
   if ((e.ctrlKey||e.metaKey) && !e.target.matches("input,textarea")){
-    const act = {z:actions.undo, c:actions.barsCopy, v:actions.barsPaste, s:backupSong, o:openSongs}[e.key.toLowerCase()];
-    if (act){ act(); e.preventDefault(); return; } }
+    const act = ctrlAction[e.key.toLowerCase()];
+    if (act){ DO[act](); e.preventDefault(); return; } }
   if (e.ctrlKey||e.metaKey||e.altKey || e.target.matches("input,textarea")) return;
   ctx.resume(); setInput("kb");
   const k = e.key.toLowerCase();
   if (/^[1-9]$/.test(k) && +k<=CHANNELS.length){ actions.lane(+k-1); e.preventDefault(); return; }
-  if (k==="arrowleft" || k==="arrowright"){ actions.secGo(state.sec + (k==="arrowright" ? 1 : -1)); e.preventDefault(); return; }
-  if (k==="delete"){ actions.secDel(); e.preventDefault(); return; }
-  if (k==="q" || k==="b"){ chordKeys.add(k); e.preventDefault(); return; }
-  if (e.repeat){ if (k in PIANO || k===" ") e.preventDefault(); return; }
-  if (k===KEYS.play){ actions.play(); e.preventDefault(); }
-  else if (k===KEYS.rec) actions.rec();
-  else if (k===KEYS.clear) actions.clear();
-  else if (k===KEYS.octDown) actions.oct(-1);
-  else if (k===KEYS.octUp) actions.oct(1);
-  else if (k===KEYS.metro) actions.metro();
-  else if (k===KEYS.addSong) actions.secNew();
-  else if (k===KEYS.scope) actions.scope();
-  else if (k===KEYS.tempoDown) actions.bpm(-5);
-  else if (k===KEYS.tempoUp) actions.bpm(5);
-  else if (k===KEYS.barsDown) actions.bars(-1);
-  else if (k===KEYS.barsUp) actions.bars(1);
-  else if (k===KEYS.volDown) actions.vol(-.1);
-  else if (k===KEYS.volUp) actions.vol(.1);
-  else if (k===KEYS.exp){ openModal(); }
-  else if (noteDown(k)) e.preventDefault();
+  if (k in CHORD_KEYS){ chordKeys.add(k); e.preventDefault(); return; }
+  const act = keyAction[k];
+  if (act && (!e.repeat || KEY_REPEAT.has(act))){ DO[act](); e.preventDefault(); return; }
+  if (e.repeat){ if (k in PIANO || act) e.preventDefault(); return; }
+  if (noteDown(k)) e.preventDefault();
 });
 window.addEventListener("keyup", e => { const k = e.key.toLowerCase(); chordKeys.delete(k); noteUp(k); });
 window.addEventListener("blur", () => { chordKeys.clear(); Object.keys(held).forEach(noteUp); });
@@ -553,7 +580,7 @@ const padNoteBtn = Object.fromEntries(Object.entries(PAD_NOTES).map(([b, semis])
 const padDrumBtn = Object.fromEntries(Object.entries(PAD_DRUMS).map(([b, id]) => [id, PAD_NAMES[b]]));
 const pianoKey = Object.fromEntries(Object.entries(PIANO).map(([k, semis]) => [semis, k.toUpperCase()]));
 const padHeld = {}, rs = {x:{dir:0,t:0}, y:{dir:0,t:0}}, ls = {x:{dir:0,t:0}};
-let lbUsed = false, rbTimer = null, rbUndid = false;           // LB: tap = playback scope, hold + right stick = tempo. RB: tap = clear lane, hold = undo
+const padTap = {};                                        // tap/hold buttons in flight: {timer, fired, used}
 let padId = null, stickMoved = false;
 function stickStep(a, v){          // a stick axis as a d-pad: fires once per push, then repeats while held
   const dir = v > .6 ? 1 : v < -.6 ? -1 : 0, now = performance.now();
@@ -575,24 +602,20 @@ function pollPad(){
   if (sx || sy){
     setInput("pad");
     if (sy) actions.lane(state.ch+sy);                                                 // up/down: lane
-    if (sx && padHeld[4]){ lbUsed = true; actions.bpm(sx*(rs.x.rep ? 10 : 5)); }       // LB held + left/right: tempo (10 while held)
+    if (sx && padHeld[PAD_MODIFIER]){ if (padTap[PAD_MODIFIER]) padTap[PAD_MODIFIER].used = true; actions.bpm(sx*(rs.x.rep ? 10 : 5)); }       // LB held + left/right: tempo (10 while held)
     else if (sx){                                                                      // left/right: section; past the last one adds a new one (not while held)
       if (sx>0 && state.sec===state.song.length-1){ if (!rs.x.rep) actions.secNew(); } else actions.secGo(state.sec+sx); }
   }
   gp.buttons.forEach((b, i) => {
     if (b.pressed === !!padHeld[i]) return;
     padHeld[i] = b.pressed; const id = "pad"+i;
+    const row = PADMAP.find(r => r.btn===i);
     if (!b.pressed){
-      if (i===4 && !lbUsed) actions.scope();
-      if (i===5){ clearTimeout(rbTimer); if (!rbUndid) actions.clear(); }
+      const t = padTap[i]; if (t){ clearTimeout(t.timer); delete padTap[i]; if (!t.fired && !t.used) DO[row.tap](); }     // a tap acts on release
       return noteUp(id); }
     setInput("pad"); ctx.resume();
-    if (i===10) return actions.sound();                // L3: sound set
-    if (i===11) return actions.metro();                // R3: metronome
-    if (i===8) return actions.play();                  // View
-    if (i===9) return actions.rec();                   // Start
-    if (i===5){ rbUndid = false; rbTimer = setTimeout(() => { rbUndid = true; actions.undo(); }, 500); return; }     // RB: tap clears (on release), hold undoes
-    if (i===4){ lbUsed = false; return; }              // LB: acts on release
+    if (row && row.act) return DO[row.act]();
+    if (row){ const t = padTap[i] = {fired:false, used:false}; if (row.hold) t.timer = setTimeout(() => { t.fired = true; DO[row.hold](); }, HOLD_MS); return; }
     const noise = CHANNELS[state.ch].kind==="noise";
     if (noise && i in PAD_DRUMS) trigger(id, null, DRUMS.find(d=>d.id===PAD_DRUMS[i]));
     else if (!noise && i in PAD_NOTES) trigger(id, PAD_NOTES[i], null, chordFor(padHeld[7], padHeld[6]));   // RT = major, LT = minor, both = dominant 7th (lofi)
@@ -739,29 +762,24 @@ $("bPlay").onclick = actions.play; $("bRec").onclick = actions.rec;
 $("bMetro").onclick = actions.metro; $("bScope").onclick = actions.scope; $("bBars").onclick = () => actions.bars(state.bars===8 ? -3 : 1); $("bClear").onclick = actions.clear;
 $("bClearAll").onclick = () => { pushUndo(); state.seq.forEach(s=>s.fill(null)); save(); toast("all cleared"); };
 $("bpm").onchange = e => { state.bpm = Math.max(60, Math.min(220, +e.target.value||120)); refresh(); save(); };
-const HELP = {
-  kb: [
-    "<span><b>1-"+CHANNELS.length+"</b> lane</span>",
-    "<span><b>A W S E D F T G Y H U J K O L P ;</b> piano (home row = white keys)</span>",
-    "<span><b>"+DRUMS.map(d=>d.key.toUpperCase()).join(" ")+"</b> drums on the drum lane</span>",
-    "%CHORD%",
-    "<span><b>Z</b>/<b>X</b> octave</span><span><b>[</b>/<b>]</b> volume</span><span><b>,</b>/<b>.</b> loop length</span>",
-    "<span><b>Space</b> play</span><span><b>R</b> record</span><span><b>C</b> clear lane</span><span><b>M</b> metronome</span>",
-    "<span><b>←</b>/<b>→</b> section</span><span><b>N</b> new section</span><span><b>Del</b> delete section</span><span><b>/</b> playback scope</span><span><b>-</b>/<b>=</b> tempo</span><span><b>Ctrl+Z</b> undo</span><span>drag over bars to select (<b>Shift</b> = every lane) · <b>Ctrl+C</b>/<b>V</b> copy/paste · <b>Backspace</b> clear</span><span><b>V</b> export</span>"],
-  pad: [
-    "<span><b>D-pad + X A B Y</b> play notes (pentatonic)</span>",
-    "%CHORD%",
-    "<span>drums lane: <b>A</b> kick <b>X</b> snare <b>Y</b> hat <b>B</b> open hat · D-pad <b>▲</b> clap <b>▼</b> rim <b>◀</b> low tom <b>▶</b> high tom</span>",
-    "<span><b>right stick</b> ▲▼ lane · ◀▶ section (past the last = new)</span>",
-    "<span><b>left stick</b> ▲▼ volume · ◀▶ octave</span>",
-    "<span><b>Start</b> record</span><span><b>View</b> play</span><span><b>RB</b> tap clear lane · hold undo</span><span><b>LB</b> tap playback scope · hold + right stick ◀▶ tempo</span><span><b>L3</b> sound set</span><span><b>R3</b> metronome</span>"],
-};
+const keyName = k => ({" ":"Space", arrowleft:"\u2190", arrowright:"\u2192", delete:"Del"})[k] || k.toUpperCase();
+const keyHelp = () => KEYMAP.map(r => "<span>"+r.keys.map((k, i) => "<b>"+(r.ctrl && !i ? "Ctrl+" : "")+keyName(k)+"</b>").join("/")+" "+r.label+"</span>").join("");
+const helpLines = () => inputMode==="pad" ? [
+  "<span><b>D-pad + X A B Y</b> play notes (pentatonic)</span>", chordHelp(),
+  "<span>drums lane: <b>A</b> kick <b>X</b> snare <b>Y</b> hat <b>B</b> open hat \u00b7 D-pad <b>\u25b2</b> clap <b>\u25bc</b> rim <b>\u25c0</b> low tom <b>\u25b6</b> high tom</span>",
+  ...PAD_STICK_HELP.map(t => "<span>"+t.replace(/^(\w+ stick)/, "<b>$1</b>")+"</span>"),
+  PADMAP.map(r => "<span><b>"+PAD_BTN[r.btn]+"</b> "+r.label+"</span>").join("")]
+: [
+  "<span><b>1-"+CHANNELS.length+"</b> lane</span>",
+  "<span><b>"+Object.keys(PIANO).map(k => k.toUpperCase()).join(" ")+"</b> piano (home row = white keys)</span>",
+  "<span><b>"+DRUMS.map(d => d.key.toUpperCase()).join(" ")+"</b> drums on the drum lane</span>", chordHelp(),
+  keyHelp()+"<span>drag over bars to select (<b>Shift</b> = every lane) \u00b7 <b>Backspace</b> clear them</span>"];
 const chordHelp = () => {
-  const lofi = state.sound==="lofi", pad = inputMode==="pad", a = pad ? "RT" : "Q", b = pad ? "LT" : "B";
-  return lofi ? "<span>hold <b>"+a+"</b> maj7 · <b>"+b+"</b> min7 · both = dom7 (block chords)</span>"
-              : "<span>hold <b>"+a+"</b> major chord · <b>"+b+"</b> minor chord (arpeggio)</span>";
+  const lofi = state.sound==="lofi", pad = inputMode==="pad", a = pad ? "RT" : keyName(chordKeyFor("rt")), b = pad ? "LT" : keyName(chordKeyFor("lt"));
+  return lofi ? "<span>hold <b>"+a+"</b> maj7 \u00b7 <b>"+b+"</b> min7 \u00b7 both = dom7 (block chords)</span>"
+              : "<span>hold <b>"+a+"</b> major chord \u00b7 <b>"+b+"</b> minor chord (arpeggio)</span>";
 };
-function renderHelp(){ $("help").innerHTML = HELP[inputMode].map(l => l==="%CHORD%" ? chordHelp() : l).join(""); }
+function renderHelp(){ $("help").innerHTML = helpLines().join(""); }
 
 // ---------- songs panel ----------
 const slug = n => cleanName(n).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "song";

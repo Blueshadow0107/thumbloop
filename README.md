@@ -80,6 +80,9 @@ Switch with the **Sound** button, or **L3** on the controller.
 | `Ctrl+O` / `Ctrl+S` | songs panel / save a backup file |
 | `V` | export |
 
+Want different keys? The controls live in one table at the top of `index.html` (`KEYMAP` for the keyboard, `PADMAP`
+for the controller, `DO` for what each action does). Change a key there and the on-screen help follows.
+
 ## Export to Strudel
 
 **Export to Strudel** (or `V`) turns your song into [Strudel](https://strudel.cc) code: one `stack(...)` per
