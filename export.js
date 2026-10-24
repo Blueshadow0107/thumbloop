@@ -25,9 +25,9 @@ function stepTokens(seq, steps){           // one token per 16th step: note / [c
   });
   return out;
 }
-function laneCode(ci, seq, bars){          // one lane's patterns plus its sound (stacked when notes overlap), or null when it is silent
+function laneCode(ci, seq, bars, vol){          // one lane's patterns plus its sound (stacked when notes overlap), or null when it is silent
   const layers = noteLayers(seq, bars*BAR); if (!layers.length) return null;
-  const c = CHANNELS[ci], pg = state.vol[ci]!==1 ? ".postgain("+state.vol[ci]+")" : "";
+  const c = CHANNELS[ci], pg = vol!==1 ? ".postgain("+vol+")" : "";
   const codes = layers.map(layer => {
     const t = stepTokens(layer, bars*BAR), groups = Array.from({length:bars}, (_, b) => t.slice(b*BAR, (b+1)*BAR).join(" "));
     const pat = groups.every(g => g===groups[0]) ? "["+groups[0]+"]" : "<"+groups.map(g => "["+g+"]").join(" ")+">";
@@ -42,7 +42,7 @@ function toStrudel(){
     const letters = sectionLetters(), done = new Set();
     state.song.forEach((sec, i) => {
       if (done.has(letters[i])) return; done.add(letters[i]);
-      const lanes = CHANNELS.map((c, ci) => laneCode(ci, sec.lanes[ci], sec.bars)).filter(Boolean);
+      const lanes = CHANNELS.map((c, ci) => laneCode(ci, sec.lanes[ci], sec.bars, sec.vol[ci])).filter(Boolean);
       lines.push("// section "+letters[i]+" ("+sec.bars+(sec.bars===1?" bar":" bars")+")",
                  "const sec"+letters[i]+" = "+(lanes.length ? "stack(\n  "+lanes.join(",\n  ")+"\n)" : "silence"), "");
     });
@@ -50,7 +50,7 @@ function toStrudel(){
     return lines.join("\n");
   }
   CHANNELS.forEach((c, ci) => {            // no song yet: export the loop you are working on
-    const code = laneCode(ci, state.seq[ci], state.bars); if (!code) return;
+    const code = laneCode(ci, state.seq[ci], state.bars, state.vol[ci]); if (!code) return;
     lines.push("// "+c.name, "$: "+code+"._scope()", "");
   });
   if (lines.length<=3) lines.push("// nothing recorded yet: hit R and play");
@@ -74,10 +74,10 @@ function toMidi(){
   const mpqn = Math.round(60e6/state.bpm);
   const tracks = [track([{tick:0, off:0, bytes:text(0x03, state.name.replace(/[^\w .,'-]/g, ""))}, {tick:0, off:0, bytes:[0xFF,0x51,3, ...be(mpqn, 3)]}])];
   CHANNELS.forEach((c, ci) => {
-    const drums = c.kind==="noise", ch = drums ? 9 : (ci < 9 ? ci : ci+1) & 15, ev = [], vel = Math.max(1, Math.min(127, Math.round(90*state.vol[ci])));
+    const drums = c.kind==="noise", ch = drums ? 9 : (ci < 9 ? ci : ci+1) & 15, ev = [];
     let at = 0;
     state.song.forEach(sec => {
-      const steps = sec.bars*BAR;
+      const steps = sec.bars*BAR, vel = Math.max(1, Math.min(127, Math.round(90*sec.vol[ci])));
       for (let i=0;i<steps;i++) entriesAt(sec.lanes[ci][i]).forEach(n => {
         const notes = n.drum ? [DRUMS.find(d => d.id===n.drum).gm] : n.chord ? n.chord.map(x => n.note+x) : [n.note];
         const len = n.drum ? 1 : Math.max(1, Math.min(n.len || 1, steps-i)), t0 = (at+i)*STEP;

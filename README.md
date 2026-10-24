@@ -23,6 +23,8 @@ It is one HTML file. No install, no build, no accounts: open `index.html`.
 3. Optional, for the real drum sounds: `python3 tools/fetch-samples.py`. It downloads the TR-909 kit into
    `drums.js`. Without it the drums are a synthesized noise kit.
 
+Volume and octave are per section: each section keeps its own lane volumes and the octave each lane plays in, and switching sections (or playing the song) uses them. Old songs start every section from the song-wide volumes they had.
+
 Songs are saved automatically in the browser (localStorage), on this device only. Click the song name at the top
 left (or **Ctrl+O**) to see all your songs: open, rename, duplicate, delete, or start a new one in any sound set.
 Browser storage can be wiped, so **Ctrl+S** (or *Save backup file*) downloads the current song as a small `.json` file,
@@ -34,7 +36,8 @@ It's plain scripts, no build step, so it still opens by double-click.
 
 | File | What's in it |
 |---|---|
-| `config.js` | **The one to edit**: sound sets, drums, piano keys, every key and button binding |
+| `sounds.js` | sound sets and their lanes, drum voices, tempo and loop constants |
+| `controls.js` | **every key and controller button**, with named buttons (`A`, `LB`, `START`…) |
 | `audio.js` | the output chain, voices and drums |
 | `songs.js` | the song library, saving, cleaning imported songs |
 | `play.js` | playback, undo, bar selection, every action |

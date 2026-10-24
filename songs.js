@@ -4,10 +4,11 @@
 const LIB_KEY = "thumbloop", OLD_KEY = "nes-keys";            // OLD_KEY: the single unnamed save from before songs had names
 const lib = {current:null, songs:{}, clips:Array(CLIP_SLOTS).fill(null)};     // clips are shared by every song
 const laneCount = sound => SOUNDS[sound].lanes.length;
-const blankSection = (sound, bars=2) => ({bars, lanes:Array.from({length:laneCount(sound)}, () => Array(bars*BAR).fill(null))});
+const laneVols = sound => SOUNDS[sound].lanes.map(l => l.vol ?? 1);
+const blankSection = (sound, bars=2) => ({bars, lanes:Array.from({length:laneCount(sound)}, () => Array(bars*BAR).fill(null)), vol:laneVols(sound), oct:Array(laneCount(sound)).fill(0)});   // vol / oct: this section's mix (volume per lane) and the octave each lane plays in
 const newId = () => Date.now().toString(36)+Math.random().toString(36).slice(2, 6);
 const cleanName = n => String(n||"").replace(/\s+/g, " ").trim().slice(0, 60);
-const newSong = (name, sound) => ({id:newId(), name, sound, bpm:SOUNDS[sound].bpm, vol:SOUNDS[sound].lanes.map(l => l.vol ?? 1), song:[blankSection(sound)], sec:0, songMode:"off", updated:Date.now()});
+const newSong = (name, sound) => ({id:newId(), name, sound, bpm:SOUNDS[sound].bpm, vol:laneVols(sound), song:[blankSection(sound)], sec:0, songMode:"off", updated:Date.now()});
 const validSong = r => !!(r && SOUNDS[r.sound] && Array.isArray(r.song) && r.song.length && r.song.every(x => x && BAR_OPTIONS.includes(x.bars) && Array.isArray(x.lanes) && x.lanes.length===laneCount(r.sound)));
 const clampInt = (v, lo, hi, d) => Number.isFinite(+v) ? Math.max(lo, Math.min(hi, Math.round(+v))) : d;
 function cleanEntry(e, noise){                                   // rebuild an entry from typed fields only: songs from files end up inside generated Strudel code
@@ -24,10 +25,13 @@ function cleanEntry(e, noise){                                   // rebuild an e
 function sanitizeSong(r){                                         // a stored or imported song, or null when it can't be used
   if (!validSong(r)) return null;
   const n = laneCount(r.sound), lanesDef = SOUNDS[r.sound].lanes;
+  const base = Array.from({length:n}, (_, i) => Number.isFinite(+(r.vol||[])[i]) ? Math.max(0, Math.min(VOL_MAX, +r.vol[i])) : 1);   // the song-wide mix older saves had: sections without their own start from it
+  const secVol = v => base.map((b, i) => Number.isFinite(+(v||[])[i]) ? Math.max(0, Math.min(VOL_MAX, +v[i])) : b);
+  const secOct = o => Array.from({length:n}, (_, i) => clampInt((o||[])[i], -2, 2, 0));
   return {id:/^[a-z0-9]{4,24}$/.test(r.id) ? r.id : newId(), name:cleanName(r.name) || "Untitled", sound:r.sound,
     bpm:clampInt(r.bpm, 60, 220, SOUNDS[r.sound].bpm),
-    vol:Array.from({length:n}, (_, i) => Number.isFinite(+(r.vol||[])[i]) ? Math.max(0, Math.min(VOL_MAX, +r.vol[i])) : 1),
-    song:r.song.map(sec => ({bars:sec.bars, lanes:sec.lanes.map((l, ci) => Array.from({length:sec.bars*BAR}, (_, k) => cleanEntry(Array.isArray(l) ? l[k] : null, lanesDef[ci].kind==="noise")))})),
+    vol:base,
+    song:r.song.map(sec => ({bars:sec.bars, vol:secVol(sec.vol), oct:secOct(sec.oct), lanes:sec.lanes.map((l, ci) => Array.from({length:sec.bars*BAR}, (_, k) => cleanEntry(Array.isArray(l) ? l[k] : null, lanesDef[ci].kind==="noise")))})),
     sec:clampInt(r.sec, 0, r.song.length-1, 0), songMode:MODES.includes(r.songMode) ? r.songMode : "off", updated:Number.isFinite(+r.updated) ? +r.updated : Date.now()};
 }
 function legacySong(o){                                          // the old single save becomes a song: its sections, plus the loop you were working on

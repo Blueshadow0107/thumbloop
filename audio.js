@@ -13,7 +13,8 @@ const makeChan = () => {
   return {gain, an, buf:new Float32Array(an.fftSize)};
 };
 const chan = CHANNELS.map(makeChan);
-const applyVol = ci => chan[ci].gain.gain.setTargetAtTime(state.vol[ci], ctx.currentTime, .01);
+const applyVol = ci => { const g = chan[ci].gain.gain; g.cancelScheduledValues(ctx.currentTime); g.setTargetAtTime(state.vol[ci], ctx.currentTime, .01); };     // cancel: drop any section-change already queued by the scheduler
+const applyVolAt = (ci, v, time) => chan[ci].gain.gain.setTargetAtTime(v, time, .01);       // the scheduler: a section starts, so its mix takes over
 let waves;
 const buildWaves = () => CHANNELS.map(c => {   // band-limited pulse wave at the given duty
   if (c.kind!=="pulse") return null;

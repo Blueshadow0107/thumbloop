@@ -16,7 +16,7 @@ function leadList(){            // what plays before the section you are on (sco
 }
 function sectionLetters(){      // identical sections share a letter: A A B A C
   const seen = [];
-  return state.song.map(sec => { const key = JSON.stringify([sec.bars, sec.lanes]); let i = seen.indexOf(key); if (i<0){ seen.push(key); i = seen.length-1; } return String.fromCharCode(65 + i%26); });
+  return state.song.map(sec => { const key = JSON.stringify([sec.bars, sec.lanes, sec.vol]); let i = seen.indexOf(key); if (i<0){ seen.push(key); i = seen.length-1; } return String.fromCharCode(65 + i%26); });
 }
 function playEntry(ci, e, time){ entriesAt(e).forEach(n => playNote(ci, n, time)); }
 function playNote(ci, e, time){
@@ -26,6 +26,7 @@ function playNote(ci, e, time){
 function schedSong(p, time){
   const tl = T.tl, it = tl.items.find(x => p >= x.start && p < x.start+x.len), off = p - it.start;
   state.playSec = it.idx;
+  if (off===0) CHANNELS.forEach((_, ci) => applyVolAt(ci, it.sec.vol ? it.sec.vol[ci] : 1, time));       // each section plays with its own mix
   if (state.metro && off%4===0) click(time, off%BAR===0);
   it.sec.lanes.forEach((lane, ci) => { const e = lane[off]; if (e) playEntry(ci, e, time); });
 }
@@ -37,6 +38,7 @@ function schedStep(n, time){
   state.playSec = -1;                                        // ...then the section you are on loops
   if (T.followed){ T.followed = false; actions.secGo(T.startSec); }     // (the view followed the lead-in; come back before reading the live lanes)
   const pos = (p - T.lead) % STEPS;
+  if (pos===0) CHANNELS.forEach((_, ci) => applyVolAt(ci, state.vol[ci], time));           // the section you are on, back to its live mix
   if (pos===0 && state.armed){ state.armed = false; state.rec = true; setTimeout(refresh); }
   if (state.metro && pos%4===0) click(time, pos%BAR===0);
   state.seq.forEach((seq, ci) => { const e = seq[pos]; if (e) playEntry(ci, e, time); });
@@ -53,7 +55,7 @@ function start(countin){
   T = {n:0, next:ctx.currentTime+.06, countin, q:[], tl, mode, lead: mode==="play" ? 0 : tl.total, startSec:state.sec}; pump(); timer = setInterval(pump, 25); refresh();
 }
 function stop(){ clearInterval(timer); timer = null; const back = T && T.followed ? T.startSec : null; T = null; if (back!==null && state.song[back]) actions.secGo(back);     // "up to here" moves the view along the lead-in; stopping returns you to where you started
-  state.rec = state.armed = false; state.playSec = -1; refresh(); }
+  state.rec = state.armed = false; state.playSec = -1; CHANNELS.forEach((_, ci) => applyVol(ci)); refresh(); }       // back to the mix of the section you are on
 function position(){          // fractional step index since transport start (or null)
   if (!T) return null; const now = ctx.currentTime; let e = null;
   for (const x of T.q) if (x.time <= now) e = x;
@@ -61,7 +63,7 @@ function position(){          // fractional step index since transport start (or
 }
 
 // ---------- actions ----------
-const snapshot = () => ({bars:state.bars, lanes:state.seq.map(l => l.slice(0, STEPS).map(e => cloneEntry(e)))});
+const snapshot = () => ({bars:state.bars, vol:state.vol.slice(), oct:state.oct.slice(), lanes:state.seq.map(l => l.slice(0, STEPS).map(e => cloneEntry(e)))});
 const undoStack = []; let recPushed = false;
 let trace = null;        // what you just deleted, shown as a dim ghost until you play, record or switch sections: {lane index: entries}
 const setTrace = t => { trace = Object.keys(t).length && Object.values(t).some(l => l.some(Boolean)) ? t : null; };
@@ -70,6 +72,9 @@ const selBars = () => sel && {l0:sel.l0, l1:sel.l1, a:Math.min(sel.a, sel.b), b:
 function commit(){ if (ready && state.song[state.sec]) state.song[state.sec] = snapshot(); }       // the loop you play on is the selected section
 function loadSection(i){
   const sec = state.song[i]; state.bars = sec.bars; STEPS = sec.bars*BAR; sel = null; trace = null;
+  if (sec.vol) state.vol = sec.vol.slice();          // each section has its own mix and octaves
+  if (sec.oct) state.oct = sec.oct.slice();
+  CHANNELS.forEach((_, ci) => applyVol(ci));
   state.seq.forEach((l, ci) => { for (let k=0;k<MAX_STEPS;k++){ const e = k<STEPS && sec.lanes[ci][k]; l[k] = cloneEntry(e); } }); }
 function pushUndo(){
   commit(); undoStack.push(JSON.stringify({song:state.song, sec:state.sec}));
@@ -86,7 +91,7 @@ const actions = {
     const d = JSON.parse(u); state.song = d.song; state.sec = d.sec; loadSection(state.sec);
     save(); refresh(); toast("undone"); },
   clear(){ pushUndo(); setTrace({[state.ch]:state.seq[state.ch].slice(0, STEPS)}); state.seq[state.ch].fill(null); save(); toast(CHANNELS[state.ch].name+" cleared"); },
-  oct(d){ state.oct[state.ch] = Math.max(-2, Math.min(2, state.oct[state.ch]+d)); refresh(); },
+  oct(d){ state.oct[state.ch] = Math.max(-2, Math.min(2, state.oct[state.ch]+d)); refresh(); save(); },
   bpm(d){ state.bpm = Math.max(60, Math.min(220, Math.round(state.bpm/5)*5 + d)); refresh(); save(); toast("bpm "+state.bpm); },
   metro(){ state.metro = !state.metro; refresh(); },
   vol(d, quiet){ const ci = state.ch; state.vol[ci] = Math.max(0, Math.min(VOL_MAX, Math.round((state.vol[ci]+d)*1000)/1000));

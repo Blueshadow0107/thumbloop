@@ -1,5 +1,5 @@
 "use strict";
-// Thumbloop input: keyboard and gamepad. Which key or button does what is in config.js.
+// Thumbloop input: keyboard and gamepad. Which key or button does what is in controls.js.
 // ---------- keyboard ----------
 const held = {}, chordKeys = new Set();           // chord keys currently held (CHORD_KEYS)
 const chordKeyFor = role => Object.keys(CHORD_KEYS).find(k => CHORD_KEYS[k]===role);
@@ -57,15 +57,12 @@ window.addEventListener("pointerdown", () => ctx.resume());          // a click 
 window.addEventListener("error", e => toast("error: "+e.message));
 
 // ---------- gamepad ----------
-const PAD_NOTES = {14:0, 13:3, 15:5, 12:7, 2:10, 0:12, 1:15, 3:17};  // dpad L,D,R,U then X,A,B,Y: minor pentatonic, no wrong notes
-const PAD_DRUMS = {0:"bd", 2:"sd", 3:"hh", 1:"oh", 12:"cp", 13:"rim", 14:"lt", 15:"ht"};   // A kick, X snare, Y hat, B open hat, D-pad up clap / down rim / left low tom / right high tom
-const PAD_NAMES = {0:"A", 1:"B", 2:"X", 3:"Y", 12:"\u25b2", 13:"\u25bc", 14:"\u25c0", 15:"\u25b6"};
 const padNoteBtn = Object.fromEntries(Object.entries(PAD_NOTES).map(([b, semis]) => [semis, PAD_NAMES[b]]));
 const padDrumBtn = Object.fromEntries(Object.entries(PAD_DRUMS).map(([b, id]) => [id, PAD_NAMES[b]]));
 const pianoKey = Object.fromEntries(Object.entries(PIANO).map(([k, semis]) => [semis, k.toUpperCase()]));
-const padHeld = {}, rs = {x:{dir:0,t:0}, y:{dir:0,t:0}}, ls = {x:{dir:0,t:0}};
+const padHeld = {}, padSticks = {left:{x:{}, y:{}}, right:{x:{}, y:{}}};
 const padTap = {};                                        // tap/hold buttons in flight: {timer, fired, used}
-let padId = null, stickMoved = false;
+let padId = null;
 function stickStep(a, v){          // a stick axis as a d-pad: fires once per push, then repeats while held
   const dir = v > .6 ? 1 : v < -.6 ? -1 : 0, now = performance.now();
   if (!dir){ a.dir = 0; return 0; }
@@ -74,30 +71,31 @@ function stickStep(a, v){          // a stick axis as a d-pad: fires once per pu
   return 0;
 }
 function stripNav(d, repeat){                // move along the sections; with Y held, move the section itself
-  if (padHeld[3]){ const to = state.sec+d; if (to>=0 && to<state.song.length) actions.secMove(state.sec, to); return; }
+  if (padHeld[BTN[PAD_STRIP_MOVE]]){ const to = state.sec+d; if (to>=0 && to<state.song.length) actions.secMove(state.sec, to); return; }
   if (d>0 && state.sec===state.song.length-1){ if (!repeat) actions.secNew(); } else actions.secGo(state.sec+d);        // past the last one adds a new one (not while held)
 }
 function stripButton(i){                      // controller buttons while the sections row is focused
-  if (i===14 || i===15) stripNav(i===15 ? 1 : -1, false);
-  else if (i===0) actions.secNew();           // A: new section (a copy of this one)
-  else if (i===2) actions.secDel();           // X: delete this section
-  else if (i===1 || i===12) actions.focusMove(-1);   // B or D-pad up: back to the lanes
+  const what = PAD_STRIP[Object.keys(BTN).find(n => BTN[n]===i)];
+  if (what==="prev" || what==="next") stripNav(what==="next" ? 1 : -1, false);
+  else if (what==="new") actions.secNew();    // a copy of this section
+  else if (what==="delete") actions.secDel();
+  else if (what==="back") actions.focusMove(-1);     // back to the lanes
 }
 function pollPad(){
   const gp = [...navigator.getGamepads()].find(g => g && g.connected);
   if ((gp ? gp.id : null) !== padId){ padId = gp ? gp.id : null; $("pad").textContent = padId ? "\u{1F3AE} " + padId.replace(/\s*\(.*\)/,"") : ""; }
   if (!gp) return;
-  const ly = gp.axes[1] || 0;                          // left stick: up = louder, down = quieter
-  if (Math.abs(ly) > .3){ actions.vol(-ly*.015, true); stickMoved = true; setInput("pad"); }
-  else if (stickMoved){ stickMoved = false; const ci = state.ch; state.vol[ci] = Math.round(state.vol[ci]/VOL_STEP)*VOL_STEP; state.vol[ci] = Math.round(state.vol[ci]*1000)/1000; applyVol(ci); refresh(); save(); }   // settle on a 5% step
-  const lx = Math.abs(ly) < .5 ? stickStep(ls.x, gp.axes[0] || 0) : 0;            // left stick \u25c0\u25b6: octave
-  if (lx){ setInput("pad"); actions.oct(lx); }
-  const sx = stickStep(rs.x, gp.axes[2] || 0), sy = stickStep(rs.y, gp.axes[3] || 0);   // right stick
-  if (sx || sy){
-    setInput("pad");
-    if (sy) actions.focusMove(sy);                                                     // up/down: lane, then the sections row
-    if (sx && padHeld[PAD_MODIFIER]){ if (padTap[PAD_MODIFIER]) padTap[PAD_MODIFIER].used = true; actions.bpm(sx*(rs.x.rep ? 10 : 5)); }       // LB held + left/right: tempo (10 while held)
-    else if (sx) stripNav(sx, rs.x.rep);                                               // left/right: section
+  for (const [name, [ax, ay]] of Object.entries(PAD_STICK_AXES)){       // sticks: each direction fires its action from PAD_STICKS
+    const st = padSticks[name]; let vx = gp.axes[ax] || 0, vy = gp.axes[ay] || 0;
+    if (Math.abs(vy) >= Math.abs(vx)) vx = 0; else vy = 0;               // a diagonal counts as its stronger direction
+    const dx = stickStep(st.x, vx), dy = stickStep(st.y, vy);
+    for (const [dir, rep] of [[dy && (dy<0 ? "up" : "down"), st.y.rep], [dx && (dx<0 ? "left" : "right"), st.x.rep]]){
+      if (!dir) continue;
+      setInput("pad");
+      const mod = Object.keys(PAD_STICK_HOLD).find(b => padHeld[BTN[b]] && PAD_STICK_HOLD[b][name] && PAD_STICK_HOLD[b][name][dir]);
+      if (mod && padTap[BTN[mod]]) padTap[BTN[mod]].used = true;         // using a button as a modifier cancels its tap
+      DO[mod ? PAD_STICK_HOLD[mod][name][dir] : PAD_STICKS[name][dir]](rep);
+    }
   }
   gp.buttons.forEach((b, i) => {
     if (b.pressed === !!padHeld[i]) return;
@@ -112,6 +110,6 @@ function pollPad(){
     if (state.strip) return stripButton(i);                                            // sections row: buttons edit sections instead of playing notes
     const noise = CHANNELS[state.ch].kind==="noise";
     if (noise && i in PAD_DRUMS) trigger(id, null, DRUMS.find(d=>d.id===PAD_DRUMS[i]));
-    else if (!noise && i in PAD_NOTES) trigger(id, PAD_NOTES[i], null, chordFor(padHeld[7], padHeld[6]));   // RT = major, LT = minor, both = dominant 7th (lofi)
+    else if (!noise && i in PAD_NOTES) trigger(id, PAD_NOTES[i], null, chordFor(padHeld[BTN[PAD_CHORD.rt]], padHeld[BTN[PAD_CHORD.lt]]));   // RT = major, LT = minor, both = dominant 7th (lofi)
   });
 }
