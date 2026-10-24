@@ -121,6 +121,7 @@ a.btn:hover{border-color:var(--accent)}
 "use strict";
 // ---------- data ----------
 const CLIP_SLOTS = 8;
+const VOL_STEP = .05;                        // keyboard volume steps (the left stick is smooth, then settles on the nearest step)
 const VOL_MAX = 1.5;                         // lane volume goes to 150% so quiet voices can be pushed up (the output limiter catches peaks)
 const BAR = 16, BAR_OPTIONS = [1,2,4,8], MAX_STEPS = 8*BAR;   // 16th-note steps
 let STEPS = 32;                              // loop length in steps (state.bars * BAR)
@@ -190,7 +191,7 @@ const MODE_LABEL = {off:"this section", last:"previous + this", all:"song up to 
 // and the on-screen help is generated from them. (Piano keys are PIANO above, drum keys are DRUMS above.)
 const DO = {
   play:() => actions.play(), rec:() => actions.rec(), clearLane:() => actions.clear(), metro:() => actions.metro(), soundSet:() => actions.sound(),
-  octDown:() => actions.oct(-1), octUp:() => actions.oct(1), volDown:() => actions.vol(-.1), volUp:() => actions.vol(.1),
+  octDown:() => actions.oct(-1), octUp:() => actions.oct(1), volDown:() => actions.vol(-VOL_STEP), volUp:() => actions.vol(VOL_STEP),
   barsDown:() => actions.bars(-1), barsUp:() => actions.bars(1), tempoDown:() => actions.bpm(-5), tempoUp:() => actions.bpm(5),
   secPrev:() => actions.secGo(state.sec-1), secNext:() => actions.secGo(state.sec+1), newSection:() => actions.secNew(), secDelete:() => actions.secDel(),
   hearCycle:() => actions.scope(), export:() => openModal(), undo:() => actions.undo(),
@@ -672,7 +673,7 @@ function pollPad(){
   if (!gp) return;
   const ly = gp.axes[1] || 0;                          // left stick: up = louder, down = quieter
   if (Math.abs(ly) > .3){ actions.vol(-ly*.015, true); stickMoved = true; setInput("pad"); }
-  else if (stickMoved){ stickMoved = false; save(); }
+  else if (stickMoved){ stickMoved = false; const ci = state.ch; state.vol[ci] = Math.round(state.vol[ci]/VOL_STEP)*VOL_STEP; state.vol[ci] = Math.round(state.vol[ci]*1000)/1000; applyVol(ci); refresh(); save(); }   // settle on a 5% step
   const lx = Math.abs(ly) < .5 ? stickStep(ls.x, gp.axes[0] || 0) : 0;            // left stick \u25c0\u25b6: octave
   if (lx){ setInput("pad"); actions.oct(lx); }
   const sx = stickStep(rs.x, gp.axes[2] || 0), sy = stickStep(rs.y, gp.axes[3] || 0);   // right stick
