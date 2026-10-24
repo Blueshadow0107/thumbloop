@@ -104,6 +104,8 @@ const actions = {
   secGo(i){ i = Math.max(0, Math.min(state.song.length-1, i)); if (i===state.sec) return; commit(); state.sec = i; loadSection(i); save(); refresh(); },
   secNew(){ pushUndo(); state.song.splice(state.sec+1, 0, snapshot()); state.sec++; loadSection(state.sec); save(); refresh();
             toast("section "+(state.sec+1)+" added, a copy of the one before (RB clears a lane)"); },
+  secDup(i){ pushUndo(); commit(); state.song.push(JSON.parse(JSON.stringify(state.song[i]))); save(); refresh();
+             toast("section "+(i+1)+" copied to the end (section "+state.song.length+")"); },
   secMove(from, to){ if (from===to) return; pushUndo(); commit(); const [sec] = state.song.splice(from, 1); state.song.splice(to, 0, sec);
                      state.sec = to; loadSection(to); save(); refresh(); toast("section moved to "+(to+1)); },
   secDel(){ pushUndo();
