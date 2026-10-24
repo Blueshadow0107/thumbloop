@@ -23,7 +23,10 @@ It is one HTML file. No install, no build, no accounts: open `index.html`.
 3. Optional, for the real drum sounds: `python3 tools/fetch-samples.py`. It downloads the TR-909 kit into
    `drums.js`. Without it the drums are a synthesized noise kit.
 
-Your loops, sections and clips are saved in the browser (localStorage), on this device only.
+Songs are saved automatically in the browser (localStorage), on this device only. Click the song name at the top
+left (or **Ctrl+O**) to see all your songs: open, rename, duplicate, delete, or start a new one in any sound set.
+Browser storage can be wiped, so **Ctrl+S** (or *Save backup file*) downloads the current song as a small `.json` file,
+and *Open file* loads one back.
 
 ## Sound sets
 
@@ -74,6 +77,7 @@ Switch with the **Sound** button, or **L3** on the controller.
 | `←` `→` `N` `Del` | section: previous/next, new, delete |
 | `/`  `-` `=` | what you hear, tempo |
 | drag, `Ctrl+C`, `Ctrl+V`, `Backspace` | select, copy, paste, clear bars |
+| `Ctrl+O` / `Ctrl+S` | songs panel / save a backup file |
 | `V` | export |
 
 ## Export to Strudel
