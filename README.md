@@ -1,0 +1,94 @@
+# Thumbloop
+
+![Thumbloop playing a lofi loop: four lanes with live scopes, a sections strip along the bottom](docs/thumbloop.gif)
+
+A loop sketchpad you play with a **game controller** (or your laptop keyboard). Hold a button, hear a note;
+hit record, and it loops. Four lanes, each with a live scope. Stack them up, string loops into sections,
+and export the result as [Strudel](https://strudel.cc) code.
+
+It is one HTML file. No install, no build, no accounts: open `index.html`.
+
+## What it is (and isn't)
+
+- **Is:** a fast way to get a musical idea out of your head and into a loop, without knowing music theory.
+  The controller plays a pentatonic scale, so there are no wrong notes. Hold a trigger and a button plays a whole chord.
+- **Isn't:** a DAW, or a serious tracker. Each lane records one note per 16th step (a chord counts as one note),
+  there is no mixing or effects, and the sounds are small synths, not samples.
+
+## Run it
+
+1. Open `index.html` in Chrome or Brave (the controller uses the Gamepad API).
+2. Click the page or press a key once. Browsers keep audio off until then.
+3. Optional, for the real drum sounds: `python3 tools/fetch-samples.py`. It downloads the TR-909 kit into
+   `drums.js`. Without it the drums are a synthesized noise kit.
+
+Your loops, sections and clips are saved in the browser (localStorage), on this device only.
+
+## Sound sets
+
+| Set | Lanes | Feel |
+|---|---|---|
+| **NES chiptune** | 2 pulse, triangle, drums | NES-style voices. Chords are fast arpeggios (one voice, like the real chip). |
+| **Lofi** | electric piano, high piano, bass, drums | FM electric piano with 7th chords, 80 bpm. |
+
+Switch with the **Sound** button, or **L3** on the controller.
+
+## Making a song
+
+- **Record:** press Record, wait out the 4-beat count-in, play. It loops and keeps layering.
+- **Sections:** the strip along the bottom is your song. The section you select *is* the loop you play on.
+  `+` adds a new one as a copy of the last, so you can vary it.
+- **Hear:** what plays while you work: just this section, the previous one first, or the whole song up to here.
+  **Play song** plays the whole thing once.
+- **Bars:** drag over bars to select them (Shift = every lane), Ctrl+C / Ctrl+V to copy, even into another section.
+- **Clips:** eight slots for single-lane loops you want to reuse.
+- **Undo:** Ctrl+Z, the Undo button, or hold RB. It covers clears, recordings, pastes and section changes.
+
+## Controls
+
+**Controller** (the standard layout, such as an Xbox pad)
+
+| Input | Does |
+|---|---|
+| D-pad + X A B Y | notes (drums on the drum lane; D-pad = clap, rim, toms) |
+| hold RT / LT | major / minor chord (lofi: maj7 / min7, both = dom7) |
+| Left stick up/down, left/right | volume, octave |
+| Right stick up/down | change lane |
+| Right stick left/right | change section (past the last = a new one) |
+| LB tap / LB + right stick left/right | cycle what you hear / tempo |
+| RB tap / hold | clear lane / undo |
+| Start / View | record / play |
+| L3 / R3 | sound set / metronome |
+
+**Keyboard**
+
+| Keys | Does |
+|---|---|
+| `A W S E D F T G Y H U J K O L P ;` | piano (home row = white keys). On the drum lane: `A S D F G H J K` |
+| hold `Q` / `B` | major / minor chord |
+| `1`-`4` | lane |
+| `Z` `X` / `[` `]` / `,` `.` | octave / volume / loop length |
+| `Space` `R` `C` `M` | play, record, clear lane, metronome |
+| `←` `→` `N` `Del` | section: previous/next, new, delete |
+| `/`  `-` `=` | what you hear, tempo |
+| drag, `Ctrl+C`, `Ctrl+V`, `Backspace` | select, copy, paste, clear bars |
+| `V` | export |
+
+## Export to Strudel
+
+**Export to Strudel** (or `V`) turns your song into [Strudel](https://strudel.cc) code: one `stack(...)` per
+distinct section, then an `arrange(...)` of the whole song. Paste it into Strudel, or use the **Open in Strudel**
+button. Strudel's own sounds are used there, so it will sound a little different (usually richer).
+
+**Record audio** saves what you hear as a `.webm` file, if you want to share a track.
+
+## Notes
+
+- Tested in Chrome/Brave on Linux. Other browsers should work, but they have not been tried.
+- Strudel's `gm_epiano1` is used for the lofi keys in the export, so it needs an internet connection the first time.
+- Samples: the TR-909 drums come from [tidal-drum-machines](https://github.com/ritchse/tidal-drum-machines),
+  which has no license, so they are downloaded by you and not included in this repo.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The drum samples are not covered by it (see Notes).

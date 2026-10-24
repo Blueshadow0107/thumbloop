@@ -1,0 +1,6 @@
+# TR-909 samples are fetched, not shipped: python3 tools/fetch-samples.py
+drums.js
+samples/
+# recordings made with "Record audio", and exports
+*.webm
+*.mp3
