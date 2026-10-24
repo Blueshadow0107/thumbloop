@@ -35,7 +35,7 @@ function schedStep(n, time){
   if (T.mode==="play") return schedSong(p % T.tl.total, time);
   if (p < T.lead) return schedSong(p, time);                 // the lead-in (earlier sections) plays once...
   state.playSec = -1;                                        // ...then the section you are on loops
-  if (state.sec!==T.startSec) actions.secGo(T.startSec);     // (the view followed the lead-in; come back before reading the live lanes)
+  if (T.followed){ T.followed = false; actions.secGo(T.startSec); }     // (the view followed the lead-in; come back before reading the live lanes)
   const pos = (p - T.lead) % STEPS;
   if (pos===0 && state.armed){ state.armed = false; state.rec = true; setTimeout(refresh); }
   if (state.metro && pos%4===0) click(time, pos%BAR===0);
@@ -52,7 +52,7 @@ function start(countin){
   const tl = timeline(leadList()), mode = tl.total ? state.songMode : "off";            // nothing saved yet: just the loop
   T = {n:0, next:ctx.currentTime+.06, countin, q:[], tl, mode, lead: mode==="play" ? 0 : tl.total, startSec:state.sec}; pump(); timer = setInterval(pump, 25); refresh();
 }
-function stop(){ clearInterval(timer); timer = null; const back = T && T.mode==="all" && state.sec!==T.startSec ? T.startSec : null; T = null; if (back!==null && state.song[back]) actions.secGo(back);     // "up to here" moves the view along the lead-in; stopping returns you to where you started
+function stop(){ clearInterval(timer); timer = null; const back = T && T.followed ? T.startSec : null; T = null; if (back!==null && state.song[back]) actions.secGo(back);     // "up to here" moves the view along the lead-in; stopping returns you to where you started
   state.rec = state.armed = false; state.playSec = -1; refresh(); }
 function position(){          // fractional step index since transport start (or null)
   if (!T) return null; const now = ctx.currentTime; let e = null;

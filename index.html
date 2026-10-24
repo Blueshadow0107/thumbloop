@@ -346,7 +346,7 @@ function draw(){
   const pos = position(), rel = pos===null ? null : pos - T.countin, relD = rel===null ? null : rel - T.lead;   // relD: steps into your new section
   if (T && T.mode==="all" && rel!==null && rel>=0 && relD<0){               // song up to here: watch the earlier sections go by on the lanes
     const it = T.tl.items.find(x => rel >= x.start && rel < x.start+x.len);
-    if (it && it.idx!==state.sec) actions.secGo(it.idx);
+    if (it){ T.followed = true; if (it.idx!==state.sec) actions.secGo(it.idx); }
   }
   let head = relD!==null && relD>=0 && T.mode!=="play" ? Math.floor(relD)%STEPS : -1;
   if (T && T.mode==="play" && rel!==null && rel>=0){                        // whole song: the lanes stay on your section; the strip shows what plays
