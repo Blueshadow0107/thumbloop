@@ -929,8 +929,11 @@ function draw(){
       g.fillStyle = i%BAR===0 ? "rgba(255,255,255,.22)" : i%4===0 ? "rgba(255,255,255,.12)" : "rgba(255,255,255,.05)";
       g.fillRect(i*cw+1, sy, cw-2, stripH);
       const ge = ghost && ghost.lanes[ci][i % (ghost.bars*BAR)];      // the previous section, dimly, so you can line things up
-      if (ge){ g.fillStyle = col; g.globalAlpha=.25; g.fillRect(i*cw+1, sy, cw*(ge.len||1)-2, stripH); g.globalAlpha=1; }
       const e = state.seq[ci][i];
+      if (ge){ const gl = entriesAt(ge), gh = stripH/gl.length;
+        gl.forEach((x, j) => { g.fillStyle = col; g.globalAlpha=.4; g.fillRect(i*cw+1, sy+j*gh, cw*(x.len||1)-2, gh-(j<gl.length-1?1:0)); g.globalAlpha=1; });
+        const gt = gl.slice(0, 3).map(x => noteLabel(ci, x)).join("+"); g.font = "bold 10px monospace";
+        if (!e && g.measureText(gt).width+6 <= cw*(ge.len||1)){ g.fillStyle = "rgba(255,255,255,.85)"; g.textBaseline = "middle"; g.fillText(gt, i*cw+4, sy+stripH/2); } }
       if (e){ const list = entriesAt(e), sh = stripH/list.length;       // several notes at one step are drawn as stacked slices
               list.forEach((x, j) => { g.fillStyle = col; g.globalAlpha=.9; g.fillRect(i*cw+1, sy+j*sh, cw*(x.len||1)-2, sh-(j<list.length-1?1:0)); g.globalAlpha=1;
                 if (x.chord){ g.fillStyle = "#fff"; g.fillRect(i*cw+1, sy+j*sh, cw*(x.len||1)-2, Math.min(3, sh)); } });
