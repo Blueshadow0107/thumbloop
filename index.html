@@ -479,11 +479,13 @@ function position(){          // fractional step index since transport start (or
 // ---------- actions ----------
 const snapshot = () => ({bars:state.bars, lanes:state.seq.map(l => l.slice(0, STEPS).map(e => cloneEntry(e)))});
 const undoStack = []; let recPushed = false;
+let trace = null;        // what you just deleted, shown as a dim ghost until you play, record or switch sections: {lane index: entries}
+const setTrace = t => { trace = Object.keys(t).length && Object.values(t).some(l => l.some(Boolean)) ? t : null; };
 let sel = null, barClip = null;        // sel = bars you dragged over {l0,l1 lanes, a,b bars}; barClip = what Ctrl+C took
 const selBars = () => sel && {l0:sel.l0, l1:sel.l1, a:Math.min(sel.a, sel.b), b:Math.max(sel.a, sel.b)};
 function commit(){ if (ready && state.song[state.sec]) state.song[state.sec] = snapshot(); }       // the loop you play on is the selected section
 function loadSection(i){
-  const sec = state.song[i]; state.bars = sec.bars; STEPS = sec.bars*BAR; sel = null;
+  const sec = state.song[i]; state.bars = sec.bars; STEPS = sec.bars*BAR; sel = null; trace = null;
   state.seq.forEach((l, ci) => { for (let k=0;k<MAX_STEPS;k++){ const e = k<STEPS && sec.lanes[ci][k]; l[k] = cloneEntry(e); } }); }
 function pushUndo(){
   commit(); undoStack.push(JSON.stringify({song:state.song, sec:state.sec}));
@@ -499,7 +501,7 @@ const actions = {
     const u = undoStack.pop(); if (!u) return toast("nothing to undo");
     const d = JSON.parse(u); state.song = d.song; state.sec = d.sec; loadSection(state.sec);
     save(); refresh(); toast("undone"); },
-  clear(){ pushUndo(); state.seq[state.ch].fill(null); save(); toast(CHANNELS[state.ch].name+" cleared"); },
+  clear(){ pushUndo(); setTrace({[state.ch]:state.seq[state.ch].slice(0, STEPS)}); state.seq[state.ch].fill(null); save(); toast(CHANNELS[state.ch].name+" cleared"); },
   oct(d){ state.oct[state.ch] = Math.max(-2, Math.min(2, state.oct[state.ch]+d)); refresh(); },
   bpm(d){ state.bpm = Math.max(60, Math.min(220, Math.round(state.bpm/5)*5 + d)); refresh(); save(); toast("bpm "+state.bpm); },
   metro(){ state.metro = !state.metro; refresh(); },
@@ -519,8 +521,9 @@ const actions = {
   secMove(from, to){ if (from===to) return; pushUndo(); commit(); const [sec] = state.song.splice(from, 1); state.song.splice(to, 0, sec);
                      state.sec = to; loadSection(to); save(); refresh(); toast("section moved to "+(to+1)); },
   secDel(){ pushUndo();
-    if (state.song.length<2){ state.seq.forEach(l => l.fill(null)); save(); refresh(); return toast("cleared: a song keeps at least one section"); }
-    state.song.splice(state.sec, 1); state.sec = Math.min(state.sec, state.song.length-1); loadSection(state.sec); save(); refresh(); toast("section deleted"); },
+    if (state.song.length<2){ const gone = Object.fromEntries(state.seq.map((l, ci) => [ci, l.slice(0, STEPS)])); state.seq.forEach(l => l.fill(null)); setTrace(gone); save(); refresh(); return toast("cleared: a song keeps at least one section"); }
+    const [gone] = state.song.splice(state.sec, 1); state.sec = Math.min(state.sec, state.song.length-1); loadSection(state.sec);
+    setTrace(Object.fromEntries(gone.lanes.map((l, ci) => [ci, l]))); save(); refresh(); toast("section deleted"); },
   scope(){ state.songMode = MODES[(MODES.indexOf(state.songMode)+1)%MODES.length]; save(); refresh(); toast("playback: "+MODE_LABEL[state.songMode]); },
   audioRec(){             // record what you hear to a file in Downloads (so a song can be shared)
     if (audioRecorder){ audioRecorder.stop(); return; }
@@ -546,6 +549,7 @@ const actions = {
     sel = {l0, l1:l0+barClip.lanes.length-1, a:start, b:Math.min(state.bars-1, start+barClip.n-1)}; save(); refresh();
     toast("pasted"+(clipped ? " (the end didn't fit in this section)" : "")); },
   barsClear(){ const r = selBars(); if (!r) return; pushUndo();
+    const gone = {}; for (let l=r.l0;l<=r.l1;l++) gone[l] = state.seq[l].slice(0, STEPS).map((e, i) => i>=r.a*BAR && i<(r.b+1)*BAR ? e : null); setTrace(gone);
     for (let l=r.l0;l<=r.l1;l++) for (let i=r.a*BAR;i<(r.b+1)*BAR;i++) state.seq[l][i] = null;
     save(); refresh(); toast("cleared the selected bars"); },
   // clips: one lane's loop, saved for reuse
@@ -585,7 +589,8 @@ function placeEntry(ci, pos, entry){      // a note at a step that already has o
   else if (i>0) cur.more[i-1] = entry;
   else (cur.more = cur.more || []).push(entry);
 }
-function trigger(id, semis, drum, chord){      // play (and record, if armed) one note or drum hit; id = what releases it
+function trigger(id, semis, drum, chord){
+  trace = null;      // play (and record, if armed) one note or drum hit; id = what releases it
   const ci = state.ch; let entry, voice = null;
   if (drum){ hitDrum(drum, ctx.currentTime); entry = {drum:drum.id}; }
   else { const m = midiOf(ci, semis); voice = startVoice(ci, m, ctx.currentTime, chord && chord.iv, Infinity, chord && chord.block); entry = {note:m, len:1}; if (chord){ entry.chord = chord.iv; if (chord.block) entry.block = true; } }
@@ -817,7 +822,7 @@ for (let i=0;i<CLIP_SLOTS;i++){ const b = document.createElement("button"); b.cl
   b.onclick = ev => actions.clipSlot(i, ev); b.oncontextmenu = ev => { ev.preventDefault(); actions.clipClear(i); }; $("slots").appendChild(b); }
 $("bPlay").onclick = actions.play; $("bRec").onclick = actions.rec;
 $("bMetro").onclick = actions.metro; $("bScope").onclick = actions.scope; $("bBars").onclick = () => actions.bars(state.bars===8 ? -3 : 1); $("bClear").onclick = actions.clear;
-$("bClearAll").onclick = () => { pushUndo(); state.seq.forEach(s=>s.fill(null)); save(); toast("all cleared"); };
+$("bClearAll").onclick = () => { pushUndo(); setTrace(Object.fromEntries(state.seq.map((l, ci) => [ci, l.slice(0, STEPS)]))); state.seq.forEach(s=>s.fill(null)); save(); toast("all cleared"); };
 $("bpm").onchange = e => { state.bpm = Math.max(60, Math.min(220, +e.target.value||120)); refresh(); save(); };
 const keyName = k => ({" ":"Space", arrowleft:"\u2190", arrowright:"\u2192", delete:"Del"})[k] || k.toUpperCase();
 const keyHelp = () => KEYMAP.map(r => "<span>"+r.keys.map((k, i) => "<b>"+(r.ctrl && !i ? "Ctrl+" : "")+keyName(k)+"</b>").join("/")+" "+r.label+"</span>").join("");
@@ -928,7 +933,8 @@ function draw(){
     for (let i=0;i<STEPS;i++){
       g.fillStyle = i%BAR===0 ? "rgba(255,255,255,.22)" : i%4===0 ? "rgba(255,255,255,.12)" : "rgba(255,255,255,.05)";
       g.fillRect(i*cw+1, sy, cw-2, stripH);
-      const ge = ghost && ghost.lanes[ci][i % (ghost.bars*BAR)];      // the previous section, dimly, so you can line things up
+      const gsrc = trace && trace[ci] ? trace[ci] : ghost && ghost.lanes[ci];                       // dim ghost: what you just deleted, else the previous section, so you can line things up
+      const ge = gsrc && gsrc[i % gsrc.length];
       const e = state.seq[ci][i];
       if (ge){ const gl = entriesAt(ge), gh = stripH/gl.length;
         gl.forEach((x, j) => { g.fillStyle = col; g.globalAlpha=.4; g.fillRect(i*cw+1, sy+j*gh, cw*(x.len||1)-2, gh-(j<gl.length-1?1:0)); g.globalAlpha=1; });
