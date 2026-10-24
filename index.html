@@ -141,7 +141,7 @@ const SOUNDS = {
      strudel:'.s("gm_epiano1").lpf(3500).room(.3).gain(.8)'},
     {name:"Keys high", color:"#e8a0bf", kind:"rhodes", base:72, level:.14,
      strudel:'.s("gm_epiano1").lpf(3500).room(.3).gain(.55)'},
-    {name:"Bass",     color:"#8fc9a9", kind:"bass",   base:36, level:.6,
+    {name:"Bass",     color:"#8fc9a9", kind:"bass",   base:36, level:.4,
      strudel:'.s("sine").lpf(500).gain(.9)'},
     {name:"Drums",    color:"#ffd37a", kind:"noise", strudel:'.bank("RolandTR909")'}]},
   synthwave: {label:"Synthwave", bpm:100, chords:{block:true, rt:{iv:[0,4,7,11], name:"maj7"}, lt:{iv:[0,3,7,10], name:"min7"}, both:{iv:[0,4,7,10], name:"dom7"}}, lanes:[
@@ -300,8 +300,11 @@ function setInput(m){ if (m!==inputMode){ inputMode = m; renderHelp(); refresh()
 
 // ---------- audio ----------
 const ctx = new (window.AudioContext||window.webkitAudioContext)();
-const master = ctx.createGain(); master.gain.value = .7; master.connect(ctx.destination);
-const recDest = ctx.createMediaStreamDestination(); master.connect(recDest); let audioRecorder = null;   // tap for "Record audio"
+const master = ctx.createGain(); master.gain.value = .6;
+const limiter = ctx.createDynamicsCompressor();                   // a kick, bass and chords landing together used to add up past full scale and distort; this holds the peaks down
+limiter.threshold.value = -10; limiter.knee.value = 8; limiter.ratio.value = 12; limiter.attack.value = .003; limiter.release.value = .15;
+master.connect(limiter); limiter.connect(ctx.destination);
+const recDest = ctx.createMediaStreamDestination(); limiter.connect(recDest); let audioRecorder = null;   // tap for "Record audio"
 const makeChan = () => {
   const gain = ctx.createGain(), an = ctx.createAnalyser(); an.fftSize = 2048;
   gain.connect(an); gain.connect(master);
