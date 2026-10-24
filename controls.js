@@ -10,6 +10,7 @@ const DO = {
   barsDown:() => actions.bars(-1), barsUp:() => actions.bars(1), tempoDown:rep => actions.bpm(rep ? -10 : -5), tempoUp:rep => actions.bpm(rep ? 10 : 5),   // rep = held: the stick repeats, and tempo speeds up
   secPrev:() => actions.secGo(state.sec-1), secNext:() => actions.secGo(state.sec+1), newSection:() => actions.secNew(), secDelete:() => actions.secDel(),
   laneUp:() => actions.focusMove(-1), laneDown:() => actions.focusMove(1), stripPrev:rep => stripNav(-1, rep), stripNext:rep => stripNav(1, rep),   // lane up/down walks the lanes, then the sections row
+  help:() => { const off = document.body.classList.toggle("nohelp"); try { localStorage.setItem("thumbloop-nohelp", off ? "1" : "0"); } catch(e){} },   // show / hide the help rows at the bottom
   hearCycle:() => actions.scope(), export:() => openModal(), undo:() => actions.undo(),
   copyBars:() => actions.barsCopy(), pasteBars:() => actions.barsPaste(), songs:() => openSongs(), backup:() => backupSong(),
 };
@@ -31,6 +32,7 @@ const KEYMAP = [          // keys are event.key in lower case; several keys on a
   {keys:["delete"], act:["secDelete"], label:"delete section"},
   {keys:["/"], act:["hearCycle"], label:"what you hear"},
   {keys:["v"], act:["export"], label:"export"},
+  {keys:["?"], act:["help"], label:"hide help"},
   {ctrl:true, keys:["z"], act:["undo"], label:"undo"},
   {ctrl:true, keys:["c","v"], act:["copyBars","pasteBars"], label:"copy / paste bars"},
   {ctrl:true, keys:["o","s"], act:["songs","backup"], label:"songs / backup file"},

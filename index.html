@@ -48,6 +48,7 @@ label{color:var(--dim);display:flex;align-items:center;gap:6px}
 .lane .tag{position:absolute;left:10px;top:6px;color:var(--lc);font-weight:bold;pointer-events:none;text-shadow:0 0 4px var(--bg)}
 .lane .tag small{color:var(--dim);font-weight:normal;margin-left:8px}
 footer{color:var(--dim);font-size:13px;display:flex;flex-wrap:wrap;gap:4px 18px}
+body.nohelp footer{display:none}
 footer b{color:var(--text);font-weight:normal;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:0 5px}
 #songsModal{position:fixed;inset:0;background:rgba(10,8,20,.8);display:none;align-items:center;justify-content:center;padding:16px;z-index:6}
 #songsModal.show{display:flex}
@@ -97,6 +98,7 @@ a.btn:hover{border-color:var(--accent)}
     <button id="bClearAll">Clear all</button>
     <span id="status"></span><span id="pad"></span>
     <span class="sp"></span>
+    <button id="bHelp" title="show / hide the help rows (?)">?</button>
     <button id="bExport">Export to Strudel</button>
   </header>
   <div id="lanes"></div>
@@ -191,7 +193,7 @@ function buildLaneEls(){                                              // one ele
 }
 buildLaneEls();
 const BIN_W = 64, TRASH_W = 2*BIN_W;                                  // the duplicate zone and the bin at the far end of the sections strip
-const chipLayout = (n, w) => { const cw = Math.max(48, Math.min(96, (w-20-TRASH_W-6*(n-1))/n)); return {cw, off:Math.max(0, 10+(state.sec+1)*(cw+6)-(w-TRASH_W))}; };    // scrolls so the selected chip stays in view
+const chipLayout = (n, w) => { const cw = Math.max(48, Math.min(96, (w-20-TRASH_W-6*(n-1))/n)); return {cw, off:Math.max(0, 10+((state.playSec>=0 ? state.playSec : state.sec)+1)*(cw+6)-(w-TRASH_W))}; };    // scrolls so the selected chip stays in view (while a song plays: the section that is sounding)
 const chipItems = () => [...state.song.map((sec, i) => ({sec, i})), {plus:true}];       // one chip per section, then a + chip
 const songEl = document.createElement("div"); songEl.className = "lane"; songEl.style.setProperty("--lc", "#9aa7ff");
 songEl.innerHTML = '<canvas></canvas><div class="tag"></div>'; bottomEl.appendChild(songEl);
@@ -430,6 +432,8 @@ function draw(){
   $("lock").style.display = ctx.state==="running" ? "none" : "block";
   requestAnimationFrame(draw);
 }
+try { if (localStorage.getItem("thumbloop-nohelp")==="1") document.body.classList.add("nohelp"); } catch(e){}      // the help rows can be hidden; remembered per browser
+$("bHelp").onclick = () => DO.help();
 renderHelp(); refresh(); requestAnimationFrame(draw);
 </script>
 </body>
