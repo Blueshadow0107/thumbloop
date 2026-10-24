@@ -34,8 +34,15 @@ and *Open file* loads one back.
 |---|---|---|
 | **NES chiptune** | 2 pulse, triangle, drums | NES-style voices. Chords are fast arpeggios (one voice, like the real chip). |
 | **Lofi** | electric piano, high piano, bass, drums | FM electric piano with 7th chords, 80 bpm. |
+| **Synthwave** | lead, pad, bass, drums | Detuned saws and a square sub, 100 bpm. |
+| **Ambient** | pad, bells, drone, percussion | Slow pads and bell tones, 70 bpm. |
 
-Switch with the **Sound** button, or **L3** on the controller.
+Switch with the **Sound** button, or **L3** on the controller. Each song remembers its own set; pick the set for a new
+song in the Songs panel.
+
+**Adding your own set:** a sound set is one entry in the `SOUNDS` list at the top of `index.html`: a name, a tempo, how
+chords sound, and its lanes. A lane can use any number of lanes per set, and the `synth` voice is built purely from
+settings (oscillators, filter, envelope), so a new set needs no new code.
 
 ## Making a song
 

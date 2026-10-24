@@ -122,7 +122,11 @@ const CLIP_SLOTS = 8;
 const BAR = 16, BAR_OPTIONS = [1,2,4,8], MAX_STEPS = 8*BAR;   // 16th-note steps
 let STEPS = 32;                              // loop length in steps (state.bars * BAR)
 const SOUNDS = {
-  nes: {label:"NES chiptune", bpm:120, lanes:[
+  // A sound set is data: a name, a tempo, how chords sound, and its lanes. Add an entry here and it shows up in the Sound button and
+  // the Songs panel. A lane has a name, colour, kind (pulse / tri / synth / rhodes / bass / noise = drums), base note (MIDI), level
+  // (loudness), optional default volume `vol`, and `strudel` = the sound chain used when exporting. kind "synth" is built from
+  // the lane's `synth` settings: oscillators (type, detune in cents, ratio to the note's pitch, gain, decay), lowpass, envelope.
+  nes: {label:"NES chiptune", bpm:120, chords:{block:false, rt:{iv:[0,4,7], name:"major chord"}, lt:{iv:[0,3,7], name:"minor chord"}, both:{iv:[0,4,7], name:"major chord"}}, lanes:[
     {name:"Pulse 1",  color:"#c4a7ff", kind:"pulse", duty:.25,  base:60, level:.22, env:{a:.003,d:.15,s:.5},
      strudel:'.s("pulse").pw(.25).crush(6).decay(.15).sustain(.4)'},
     {name:"Pulse 2",  color:"#ff8fcf", kind:"pulse", duty:.125, base:48, level:.18, env:{a:.003,d:.10,s:.4},
@@ -130,7 +134,7 @@ const SOUNDS = {
     {name:"Triangle", color:"#7fe3c8", kind:"tri",   base:36, level:.5, env:{a:.003,d:.05,s:1},
      strudel:'.s("triangle")'},
     {name:"Drums",    color:"#ffd37a", kind:"noise", strudel:'.bank("RolandTR909")'}]},
-  lofi: {label:"Lofi", bpm:80, lanes:[
+  lofi: {label:"Lofi", bpm:80, chords:{block:true, rt:{iv:[0,4,7,11], name:"maj7"}, lt:{iv:[0,3,7,10], name:"min7"}, both:{iv:[0,4,7,10], name:"dom7"}}, lanes:[
     {name:"Keys",     color:"#ffb48a", kind:"rhodes", base:60, level:.2,
      strudel:'.s("gm_epiano1").lpf(3500).room(.3).gain(.8)'},
     {name:"Keys high", color:"#e8a0bf", kind:"rhodes", base:72, level:.14,
@@ -138,6 +142,28 @@ const SOUNDS = {
     {name:"Bass",     color:"#8fc9a9", kind:"bass",   base:36, level:.6,
      strudel:'.s("sine").lpf(500).gain(.9)'},
     {name:"Drums",    color:"#ffd37a", kind:"noise", strudel:'.bank("RolandTR909")'}]},
+  synthwave: {label:"Synthwave", bpm:100, chords:{block:true, rt:{iv:[0,4,7,11], name:"maj7"}, lt:{iv:[0,3,7,10], name:"min7"}, both:{iv:[0,4,7,10], name:"dom7"}}, lanes:[
+    {name:"Lead", color:"#ff7edb", kind:"synth", base:72, level:.16,
+     synth:{osc:[{type:"sawtooth", detune:-7}, {type:"sawtooth", detune:7}, {type:"square", gain:.5}], lp:4200, q:3, env:{a:.01, d:.25, s:.6, r:.2}},
+     strudel:'.s("sawtooth").lpf(4200).gain(.5).delay(.25)'},
+    {name:"Pad", color:"#9d7bff", kind:"synth", base:48, level:.12,
+     synth:{osc:[{type:"sawtooth", detune:-12}, {type:"sawtooth"}, {type:"sawtooth", detune:12}], lp:1800, env:{a:.35, d:.8, s:.8, r:.7}},
+     strudel:'.s("supersaw").lpf(1800).attack(.3).release(.7).gain(.45)'},
+    {name:"Bass", color:"#5be3ff", kind:"synth", base:36, level:.34,
+     synth:{osc:[{type:"sawtooth"}, {type:"square", ratio:.5, gain:.6}], lp:700, q:2, env:{a:.005, d:.18, s:.6, r:.08}},
+     strudel:'.s("sawtooth").lpf(700).gain(.8)'},
+    {name:"Drums", color:"#ffd37a", kind:"noise", strudel:'.bank("RolandTR909")'}]},
+  ambient: {label:"Ambient", bpm:70, chords:{block:true, rt:{iv:[0,4,7,11], name:"maj7"}, lt:{iv:[0,3,7,10], name:"min7"}, both:{iv:[0,2,7], name:"sus2"}}, lanes:[
+    {name:"Pad", color:"#8fd3ff", kind:"synth", base:48, level:.16,
+     synth:{osc:[{type:"triangle", detune:-6}, {type:"triangle", detune:6}, {type:"sine", ratio:2, gain:.4}], lp:1400, env:{a:1.1, d:1.5, s:.85, r:1.8}},
+     strudel:'.s("triangle").lpf(1400).attack(1).release(2).room(.8).gain(.5)'},
+    {name:"Bells", color:"#ffe3a0", kind:"synth", base:72, level:.16,
+     synth:{osc:[{type:"sine"}, {type:"sine", ratio:3.5, gain:.35, decay:.5}, {type:"sine", ratio:5.4, gain:.2, decay:.3}], env:{a:.003, d:1.6, s:0, r:1.2}},
+     strudel:'.s("gm_celesta").room(.7).gain(.6)'},
+    {name:"Drone", color:"#c9a7ff", kind:"synth", base:36, level:.2,
+     synth:{osc:[{type:"sine"}, {type:"sine", ratio:1.5, gain:.5}, {type:"triangle", ratio:.5, gain:.4}], lp:500, env:{a:1.8, d:2, s:.9, r:3}},
+     strudel:'.s("sine").lpf(500).attack(1.5).release(3).room(.6).gain(.6)'},
+    {name:"Percussion", color:"#9be8c6", kind:"noise", vol:.55, strudel:'.bank("RolandTR909").gain(.6)'}]},
 };
 const CHANNELS = SOUNDS.nes.lanes.map(c => ({...c}));     // mutated in place by applySound() so every reference stays valid
 const DRUMS = [  // key -> TR-909 hit (synth fallback while samples load)
@@ -152,12 +178,8 @@ const DRUMS = [  // key -> TR-909 hit (synth fallback while samples load)
 ];
 const PIANO = {a:0,w:1,s:2,e:3,d:4,f:5,t:6,g:7,y:8,h:9,u:10,j:11,k:12,o:13,l:14,p:15,";":16};
 const NOTE_NAMES = ["c","c#","d","d#","e","f","f#","g","g#","a","a#","b"];
-const ARP_HZ = 30;                            // NES chords: one voice cycling the chord tones, ~30 times a second
-const CHORD_SETS = {                          // hold RT / LT (keyboard Q / B); both together = "both"
-  nes:  {rt:{iv:[0,4,7]}, lt:{iv:[0,3,7]}, both:{iv:[0,4,7]}},                                            // triads, arpeggiated
-  lofi: {rt:{iv:[0,4,7,11], block:true}, lt:{iv:[0,3,7,10], block:true}, both:{iv:[0,4,7,10], block:true}},  // maj7 / min7 / dom7, block chords
-};
-const chordFor = (rt, lt) => rt||lt ? CHORD_SETS[state.sound][rt&&lt ? "both" : rt ? "rt" : "lt"] : null;
+const ARP_HZ = 30;                            // arpeggiated chords (NES): one voice cycling the chord tones, ~30 times a second
+const chordFor = (rt, lt) => { if (!rt && !lt) return null; const set = SOUNDS[state.sound].chords; return {iv:set[rt&&lt ? "both" : rt ? "rt" : "lt"].iv, block:set.block}; };   // hold RT / LT
 const MODES = ["off","last","all","play"];     // what you hear (LB cycles it): this section / previous + this / the song up to here / the whole song
 const MODE_LABEL = {off:"this section", last:"previous + this", all:"song up to here", play:"whole song"};
 // ---------- controls: rebind things here ----------
@@ -208,6 +230,8 @@ const state = {sound:"nes", armed:false, song:[], sec:0, songMode:"off", playSec
                ch:0, oct:CHANNELS.map(()=>0), vol:CHANNELS.map(()=>1), bpm:120, bars:2, metro:true, rec:false,
                seq:CHANNELS.map(()=>Array(MAX_STEPS).fill(null))};
 let ready = false, saveFailed = false;
+let lanesEl = null;                          // the lanes container, once the UI is built (applySound rebuilds the lanes when the lane count changes)
+const cv = [];                               // per lane: {el, canvas, tag}
 // ---------- songs: a library of named songs in localStorage ----------
 const LIB_KEY = "thumbloop", OLD_KEY = "nes-keys";            // OLD_KEY: the single unnamed save from before songs had names
 const lib = {current:null, songs:{}, clips:Array(CLIP_SLOTS).fill(null)};     // clips are shared by every song
@@ -215,7 +239,7 @@ const laneCount = sound => SOUNDS[sound].lanes.length;
 const blankSection = (sound, bars=2) => ({bars, lanes:Array.from({length:laneCount(sound)}, () => Array(bars*BAR).fill(null))});
 const newId = () => Date.now().toString(36)+Math.random().toString(36).slice(2, 6);
 const cleanName = n => String(n||"").replace(/\s+/g, " ").trim().slice(0, 60);
-const newSong = (name, sound) => ({id:newId(), name, sound, bpm:SOUNDS[sound].bpm, vol:Array(laneCount(sound)).fill(1), song:[blankSection(sound)], sec:0, songMode:"off", updated:Date.now()});
+const newSong = (name, sound) => ({id:newId(), name, sound, bpm:SOUNDS[sound].bpm, vol:SOUNDS[sound].lanes.map(l => l.vol ?? 1), song:[blankSection(sound)], sec:0, songMode:"off", updated:Date.now()});
 const validSong = r => !!(r && SOUNDS[r.sound] && Array.isArray(r.song) && r.song.length && r.song.every(x => x && BAR_OPTIONS.includes(x.bars) && Array.isArray(x.lanes) && x.lanes.length===laneCount(r.sound)));
 const clampInt = (v, lo, hi, d) => Number.isFinite(+v) ? Math.max(lo, Math.min(hi, Math.round(+v))) : d;
 function cleanEntry(e, noise){                                   // rebuild an entry from typed fields only: songs from files end up inside generated Strudel code
@@ -276,11 +300,12 @@ function setInput(m){ if (m!==inputMode){ inputMode = m; renderHelp(); refresh()
 const ctx = new (window.AudioContext||window.webkitAudioContext)();
 const master = ctx.createGain(); master.gain.value = .7; master.connect(ctx.destination);
 const recDest = ctx.createMediaStreamDestination(); master.connect(recDest); let audioRecorder = null;   // tap for "Record audio"
-const chan = CHANNELS.map(() => {
+const makeChan = () => {
   const gain = ctx.createGain(), an = ctx.createAnalyser(); an.fftSize = 2048;
   gain.connect(an); gain.connect(master);
   return {gain, an, buf:new Float32Array(an.fftSize)};
-});
+};
+const chan = CHANNELS.map(makeChan);
 const applyVol = ci => chan[ci].gain.gain.setTargetAtTime(state.vol[ci], ctx.currentTime, .01);
 let waves;
 const buildWaves = () => CHANNELS.map(c => {   // band-limited pulse wave at the given duty
@@ -289,9 +314,18 @@ const buildWaves = () => CHANNELS.map(c => {   // band-limited pulse wave at the
   for (let n=1;n<N;n++){ const k=2/(n*Math.PI); re[n]=k*Math.sin(n*Math.PI*c.duty); im[n]=k*(1-Math.cos(n*Math.PI*c.duty)); }
   return ctx.createPeriodicWave(re, im);
 });
-function applySound(){                         // swap every lane over to the active sound set
-  CHANNELS.forEach((c, i) => { Object.keys(c).forEach(k => delete c[k]); Object.assign(c, SOUNDS[state.sound].lanes[i]); });
+function applySound(){                         // swap every lane over to the active sound set (the set may have a different number of lanes)
+  const lanes = SOUNDS[state.sound].lanes, n = lanes.length;
+  while (CHANNELS.length < n) CHANNELS.push({});
+  CHANNELS.length = n;
+  CHANNELS.forEach((c, i) => { Object.keys(c).forEach(k => delete c[k]); Object.assign(c, lanes[i]); });
+  while (chan.length < n) chan.push(makeChan());
+  state.oct = Array.from({length:n}, (_, i) => state.oct[i] || 0);
+  if (state.vol.length!==n) state.vol = lanes.map(l => l.vol ?? 1);
+  while (state.seq.length < n) state.seq.push(Array(MAX_STEPS).fill(null));
+  state.seq.length = n; state.ch = Math.min(state.ch, n-1);
   waves = buildWaves();
+  if (lanesEl) buildLaneEls();
 }
 applySound();
 CHANNELS.forEach((_, ci) => applyVol(ci));
@@ -321,11 +355,24 @@ function startBass(ci, midi, when){             // warm sine bass with a hint of
   a.connect(g); b.connect(bg).connect(g); g.connect(lp).connect(chan[ci].gain); a.start(when); b.start(when);
   return { stop(t){ g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0, t, .08); a.stop(t+.6); b.stop(t+.6); } };
 }
+function startSynth(ci, midi, when){            // configurable synth: a few oscillators through a lowpass and an envelope (settings in the lane's `synth`)
+  const c = CHANNELS[ci], p = c.synth, f = 440*2**((midi-69)/12), env = p.env, total = p.osc.reduce((t, o) => t+(o.gain ?? 1), 0);
+  const g = ctx.createGain(), lp = ctx.createBiquadFilter(), oscs = [];
+  lp.type = "lowpass"; lp.frequency.value = Math.min(p.lp || 18000, f*40); lp.Q.value = p.q || .7;
+  g.gain.setValueAtTime(0, when); g.gain.linearRampToValueAtTime(c.level, when+env.a); g.gain.setTargetAtTime(c.level*env.s, when+env.a, env.d/3);
+  p.osc.forEach(o => {
+    const x = ctx.createOscillator(), og = ctx.createGain(); x.type = o.type; x.frequency.value = f*(o.ratio || 1); x.detune.value = o.detune || 0;
+    og.gain.value = (o.gain ?? 1)/total; if (o.decay) og.gain.setTargetAtTime(0, when+.002, o.decay);       // a partial that fades (bell overtones)
+    x.connect(og).connect(g); x.start(when); oscs.push(x);
+  });
+  g.connect(lp).connect(chan[ci].gain);
+  return { stop(t){ g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0, t, env.r/3); oscs.forEach(x => x.stop(t+env.r+.1)); } };
+}
 function startVoice(ci, midi, when, chord, dur=Infinity, block=false){
   if (chord && block){ const vs = chord.map(i => startVoice(ci, midi+i, when, null, dur)); return { stop(t){ vs.forEach(v => v.stop(t)); } }; }
-  const kind = CHANNELS[ci].kind;
-  if (kind==="rhodes") return startRhodes(ci, midi, when);
-  if (kind==="bass") return startBass(ci, midi, when);
+  return (VOICES[CHANNELS[ci].kind] || startChip)(ci, midi, when, chord, dur);
+}
+function startChip(ci, midi, when, chord, dur){   // NES-style voice: pulse or triangle, chords as fast arpeggios
   const c = CHANNELS[ci], o = ctx.createOscillator(), g = ctx.createGain();
   const freqs = (chord || [0]).map(i => 440*2**((midi+i-69)/12));
   o.frequency.value = freqs[0];
@@ -344,6 +391,7 @@ function startVoice(ci, midi, when, chord, dur=Infinity, block=false){
   arp();
   return { stop(t){ stopAt = t; g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0, t, .02); o.stop(t+.2); } };
 }
+const VOICES = {pulse:startChip, tri:startChip, synth:startSynth, rhodes:startRhodes, bass:startBass};     // voice kinds a lane can use
 const drumBufs = {};   // TR-909 samples, the same ones Strudel's .bank("RolandTR909") plays
 Object.entries(window.DRUM_SAMPLES || {}).forEach(async ([id, uri]) => {
   try { drumBufs[id] = await ctx.decodeAudioData(await (await fetch(uri)).arrayBuffer()); } catch(e){ console.warn("drum sample", id, e); }
@@ -457,7 +505,8 @@ const actions = {
                  applyVol(ci); refresh(); if (!quiet) save(); },
   bars(d){ const i = Math.max(0, Math.min(BAR_OPTIONS.length-1, BAR_OPTIONS.indexOf(state.bars)+d)); if (BAR_OPTIONS[i]===state.bars) return;
            pushUndo(); state.bars = BAR_OPTIONS[i]; STEPS = state.bars*BAR; refresh(); save(); },
-  sound(){ const next = state.sound==="nes" ? "lofi" : "nes";
+  sound(){ const same = Object.keys(SOUNDS).filter(k => laneCount(k)===CHANNELS.length), next = same[(same.indexOf(state.sound)+1)%same.length];
+           if (next===state.sound) return toast("no other sound set has "+CHANNELS.length+" lanes: start a new song in it (Songs panel)");
            if (state.bpm===SOUNDS[state.sound].bpm) state.bpm = SOUNDS[next].bpm;       // follow the new set's usual tempo unless you changed it
            state.sound = next; applySound(); CHANNELS.forEach((_, ci) => applyVol(ci)); save(); renderHelp(); refresh(); toast("sound set: "+SOUNDS[next].label); },
   lane(i){ state.ch = (i+CHANNELS.length)%CHANNELS.length; refresh(); },
@@ -694,21 +743,27 @@ $("bClose").onclick = closeModal; $("bExport").onclick = openModal;
 let toastT; function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),1800); }
 
 // ---------- UI ----------
-const lanesEl = $("lanes"), cv = [];
-CHANNELS.forEach((c, ci) => {
-  const d = document.createElement("div"); d.className = "lane"; d.style.setProperty("--lc", c.color);
-  d.innerHTML = '<canvas></canvas><div class="tag"></div>'; d.onclick = () => actions.lane(ci);
-  const barAt = ev => Math.max(0, Math.min(state.bars-1, Math.floor((ev.clientX - d.getBoundingClientRect().left) / d.clientWidth * state.bars)));
-  d.onpointerdown = ev => { if (ev.button!==0) return; const b = barAt(ev), all = ev.shiftKey;
-    sel = {l0:all ? 0 : ci, l1:all ? CHANNELS.length-1 : ci, a:b, b};
-    const move = e2 => { sel.b = barAt(e2); }, up = () => { removeEventListener("pointermove", move); removeEventListener("pointerup", up); };
-    addEventListener("pointermove", move); addEventListener("pointerup", up); };
-  lanesEl.appendChild(d); cv.push({el:d, canvas:d.firstChild, tag:d.lastChild});
-});
+lanesEl = $("lanes");
+const bottomEl = document.createElement("div"); bottomEl.id = "bottom"; lanesEl.appendChild(bottomEl);
+function buildLaneEls(){                                              // one element per lane, sized to the current sound set
+  lanesEl.querySelectorAll(":scope > .lane").forEach(el => el.remove());
+  cv.length = 0;
+  CHANNELS.forEach((c, ci) => {
+    const d = document.createElement("div"); d.className = "lane"; d.style.setProperty("--lc", c.color);
+    d.innerHTML = '<canvas></canvas><div class="tag"></div>'; d.onclick = () => actions.lane(ci);
+    const barAt = ev => Math.max(0, Math.min(state.bars-1, Math.floor((ev.clientX - d.getBoundingClientRect().left) / d.clientWidth * state.bars)));
+    d.onpointerdown = ev => { if (ev.button!==0) return; const b = barAt(ev), all = ev.shiftKey;
+      sel = {l0:all ? 0 : ci, l1:all ? CHANNELS.length-1 : ci, a:b, b};
+      const move = e2 => { sel.b = barAt(e2); }, up = () => { removeEventListener("pointermove", move); removeEventListener("pointerup", up); };
+      addEventListener("pointermove", move); addEventListener("pointerup", up); };
+    lanesEl.insertBefore(d, bottomEl); cv.push({el:d, canvas:d.firstChild, tag:d.lastChild});
+  });
+  lanesEl.style.gridTemplateRows = "repeat("+CHANNELS.length+",1fr) 64px";
+}
+buildLaneEls();
 const TRASH_W = 64;                                                   // the bin at the far end of the sections strip
 const chipLayout = (n, w) => { const cw = Math.max(48, Math.min(96, (w-20-TRASH_W-6*(n-1))/n)); return {cw, off:Math.max(0, 10+(state.sec+1)*(cw+6)-(w-TRASH_W))}; };    // scrolls so the selected chip stays in view
 const chipItems = () => [...state.song.map((sec, i) => ({sec, i})), {plus:true}];       // one chip per section, then a + chip
-const bottomEl = document.createElement("div"); bottomEl.id = "bottom"; lanesEl.appendChild(bottomEl);
 const songEl = document.createElement("div"); songEl.className = "lane"; songEl.style.setProperty("--lc", "#9aa7ff");
 songEl.innerHTML = '<canvas></canvas><div class="tag"></div>'; bottomEl.appendChild(songEl);
 const clipsEl = document.createElement("div"); clipsEl.className = "panel"; bottomEl.appendChild(clipsEl);
@@ -775,9 +830,8 @@ const helpLines = () => inputMode==="pad" ? [
   "<span><b>"+DRUMS.map(d => d.key.toUpperCase()).join(" ")+"</b> drums on the drum lane</span>", chordHelp(),
   keyHelp()+"<span>drag over bars to select (<b>Shift</b> = every lane) \u00b7 <b>Backspace</b> clear them</span>"];
 const chordHelp = () => {
-  const lofi = state.sound==="lofi", pad = inputMode==="pad", a = pad ? "RT" : keyName(chordKeyFor("rt")), b = pad ? "LT" : keyName(chordKeyFor("lt"));
-  return lofi ? "<span>hold <b>"+a+"</b> maj7 \u00b7 <b>"+b+"</b> min7 \u00b7 both = dom7 (block chords)</span>"
-              : "<span>hold <b>"+a+"</b> major chord \u00b7 <b>"+b+"</b> minor chord (arpeggio)</span>";
+  const set = SOUNDS[state.sound].chords, pad = inputMode==="pad", a = pad ? "RT" : keyName(chordKeyFor("rt")), b = pad ? "LT" : keyName(chordKeyFor("lt"));
+  return "<span>hold <b>"+a+"</b> "+set.rt.name+" \u00b7 <b>"+b+"</b> "+set.lt.name+" \u00b7 both = "+set.both.name+(set.block ? " (block chords)" : " (arpeggio)")+"</span>";
 };
 function renderHelp(){ $("help").innerHTML = helpLines().join(""); }
 
