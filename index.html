@@ -686,7 +686,7 @@ function draw(){
       g.fillStyle = i%BAR===0 ? "rgba(255,255,255,.22)" : i%4===0 ? "rgba(255,255,255,.12)" : "rgba(255,255,255,.05)";
       g.fillRect(i*cw+1, sy, cw-2, stripH);
       const gsrc = trace && trace[ci] ? trace[ci] : ghost && ghost.lanes[ci];                       // dim ghost: what you just deleted, else the previous section, so you can line things up
-      const ge = gsrc && gsrc[i % gsrc.length];
+      const ge = gsrc && gsrc[i];                                   // (no wrap: a shorter previous section isn't repeated under a longer one)
       const e = state.seq[ci][i];
       if (ge){ const gl = entriesAt(ge), gh = stripH/gl.length;
         gl.forEach((x, j) => { g.fillStyle = col; g.globalAlpha=.4; g.fillRect(i*cw+1, sy+j*gh, cw*(x.len||1)-2, gh-(j<gl.length-1?1:0)); g.globalAlpha=1; });
