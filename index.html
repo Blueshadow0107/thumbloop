@@ -462,6 +462,7 @@ function schedStep(n, time){
   if (T.mode==="play") return schedSong(p % T.tl.total, time);
   if (p < T.lead) return schedSong(p, time);                 // the lead-in (earlier sections) plays once...
   state.playSec = -1;                                        // ...then the section you are on loops
+  if (state.sec!==T.startSec) actions.secGo(T.startSec);     // (the view followed the lead-in; come back before reading the live lanes)
   const pos = (p - T.lead) % STEPS;
   if (pos===0 && state.armed){ state.armed = false; state.rec = true; setTimeout(refresh); }
   if (state.metro && pos%4===0) click(time, pos%BAR===0);
@@ -478,7 +479,7 @@ function start(countin){
   const tl = timeline(leadList()), mode = tl.total ? state.songMode : "off";            // nothing saved yet: just the loop
   T = {n:0, next:ctx.currentTime+.06, countin, q:[], tl, mode, lead: mode==="play" ? 0 : tl.total, startSec:state.sec}; pump(); timer = setInterval(pump, 25); refresh();
 }
-function stop(){ clearInterval(timer); timer = null; const back = T && T.mode==="play" ? T.startSec : null; T = null; if (back!==null && state.song[back]) actions.secGo(back);     // whole-song playback moves the view along; stopping returns you to where you started
+function stop(){ clearInterval(timer); timer = null; const back = T && T.mode==="all" && state.sec!==T.startSec ? T.startSec : null; T = null; if (back!==null && state.song[back]) actions.secGo(back);     // "up to here" moves the view along the lead-in; stopping returns you to where you started
   state.rec = state.armed = false; state.playSec = -1; refresh(); }
 function position(){          // fractional step index since transport start (or null)
   if (!T) return null; const now = ctx.currentTime; let e = null;
@@ -947,6 +948,10 @@ $("songList").onclick = e => {
 function draw(){
   pollPad();
   const pos = position(), rel = pos===null ? null : pos - T.countin, relD = rel===null ? null : rel - T.lead;   // relD: steps into your new section
+  if (T && T.mode==="all" && rel!==null && rel>=0 && relD<0){               // song up to here: watch the earlier sections go by on the lanes
+    const it = T.tl.items.find(x => rel >= x.start && rel < x.start+x.len);
+    if (it && it.idx!==state.sec) actions.secGo(it.idx);
+  }
   let head = relD!==null && relD>=0 && T.mode!=="play" ? Math.floor(relD)%STEPS : -1;
   if (T && T.mode==="play" && rel!==null && rel>=0){                        // whole song: the lanes stay on your section; the strip shows what plays
     const at = rel % T.tl.total, it = T.tl.items.find(x => at >= x.start && at < x.start+x.len);
