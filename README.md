@@ -1,6 +1,6 @@
 # Thumbloop
 
-![Thumbloop playing a lofi loop: four lanes with live scopes, a sections strip along the bottom](docs/thumbloop.gif)
+![Thumbloop playing a synthwave song: four lanes with live scopes, a sections strip along the bottom](docs/thumbloop.gif)
 
 A loop sketchpad you play with a **game controller** (or your laptop keyboard). Hold a button, hear a note;
 hit record, and it loops. Four lanes, each with a live scope. Stack them up, string loops into sections,
