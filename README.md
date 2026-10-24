@@ -65,7 +65,7 @@ settings (oscillators, filter, envelope), so a new set needs no new code.
 | D-pad + X A B Y | notes (drums on the drum lane; D-pad = clap, rim, toms) |
 | hold RT / LT | major / minor chord (lofi: maj7 / min7, both = dom7) |
 | Left stick up/down, left/right | volume, octave |
-| Right stick up/down | change lane |
+| Right stick up/down | change lane; one past the last lane is the sections row (D-pad left/right pick, A new, X delete, hold Y + left/right move, B back) |
 | Right stick left/right | change section (past the last = a new one) |
 | LB tap / LB + right stick left/right | cycle what you hear / tempo |
 | RB tap / hold | clear lane / undo |

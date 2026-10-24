@@ -121,6 +121,7 @@ a.btn:hover{border-color:var(--accent)}
 "use strict";
 // ---------- data ----------
 const CLIP_SLOTS = 8;
+const VOL_MAX = 1.5;                         // lane volume goes to 150% so quiet voices can be pushed up (the output limiter catches peaks)
 const BAR = 16, BAR_OPTIONS = [1,2,4,8], MAX_STEPS = 8*BAR;   // 16th-note steps
 let STEPS = 32;                              // loop length in steps (state.bars * BAR)
 const SOUNDS = {
@@ -162,8 +163,8 @@ const SOUNDS = {
     {name:"Bells", color:"#ffe3a0", kind:"synth", base:72, level:.16,
      synth:{osc:[{type:"sine"}, {type:"sine", ratio:3.5, gain:.35, decay:.5}, {type:"sine", ratio:5.4, gain:.2, decay:.3}], env:{a:.003, d:1.6, s:0, r:1.2}},
      strudel:'.s("gm_celesta").room(.7).gain(.6)'},
-    {name:"Drone", color:"#c9a7ff", kind:"synth", base:36, level:.2,
-     synth:{osc:[{type:"sine"}, {type:"sine", ratio:1.5, gain:.5}, {type:"triangle", ratio:.5, gain:.4}], lp:500, env:{a:1.8, d:2, s:.9, r:3}},
+    {name:"Drone", color:"#c9a7ff", kind:"synth", base:36, level:.26,
+     synth:{osc:[{type:"sine"}, {type:"sine", ratio:2, gain:.8}, {type:"triangle", ratio:3, gain:.35}], lp:900, env:{a:1.8, d:2, s:.9, r:3}},
      strudel:'.s("sine").lpf(500).attack(1.5).release(3).room(.6).gain(.6)'},
     {name:"Percussion", color:"#9be8c6", kind:"noise", vol:.55, strudel:'.bank("RolandTR909").gain(.6)'}]},
 };
@@ -223,13 +224,13 @@ const PADMAP = [          // press: act. tap/hold: tap on release, hold after HO
   {btn:4, tap:"hearCycle", label:"tap what you hear \u00b7 hold + right stick \u25c0\u25b6 tempo"},
 ];
 const PAD_MODIFIER = 4, HOLD_MS = 500;                    // hold LB + right stick left/right = tempo
-const PAD_STICK_HELP = ["right stick \u25b2\u25bc lane \u00b7 \u25c0\u25b6 section (past the last = new)", "left stick \u25b2\u25bc volume \u00b7 \u25c0\u25b6 octave"];
+const PAD_STICK_HELP = ["right stick \u25b2\u25bc lane, then the sections row \u00b7 \u25c0\u25b6 section (past the last = new)", "left stick \u25b2\u25bc volume \u00b7 \u25c0\u25b6 octave", "on the sections row: D-pad \u25c0\u25b6 pick \u00b7 A new \u00b7 X delete \u00b7 hold Y + \u25c0\u25b6 move \u00b7 B back"];
 const keyAction = {}, ctrlAction = {};
 KEYMAP.forEach(r => r.keys.forEach((k, i) => { (r.ctrl ? ctrlAction : keyAction)[k] = r.act[i]; }));
 
 // ---------- state ----------
 const state = {sound:"nes", armed:false, song:[], sec:0, songMode:"off", playSec:-1, cur:0, clips:Array(CLIP_SLOTS).fill(null),
-               ch:0, oct:CHANNELS.map(()=>0), vol:CHANNELS.map(()=>1), bpm:120, bars:2, metro:true, rec:false,
+               ch:0, strip:false, oct:CHANNELS.map(()=>0), vol:CHANNELS.map(()=>1), bpm:120, bars:2, metro:true, rec:false,
                seq:CHANNELS.map(()=>Array(MAX_STEPS).fill(null))};
 let ready = false, saveFailed = false;
 let lanesEl = null;                          // the lanes container, once the UI is built (applySound rebuilds the lanes when the lane count changes)
@@ -260,7 +261,7 @@ function sanitizeSong(r){                                         // a stored or
   const n = laneCount(r.sound), lanesDef = SOUNDS[r.sound].lanes;
   return {id:/^[a-z0-9]{4,24}$/.test(r.id) ? r.id : newId(), name:cleanName(r.name) || "Untitled", sound:r.sound,
     bpm:clampInt(r.bpm, 60, 220, SOUNDS[r.sound].bpm),
-    vol:Array.from({length:n}, (_, i) => Number.isFinite(+(r.vol||[])[i]) ? Math.max(0, Math.min(1, +r.vol[i])) : 1),
+    vol:Array.from({length:n}, (_, i) => Number.isFinite(+(r.vol||[])[i]) ? Math.max(0, Math.min(VOL_MAX, +r.vol[i])) : 1),
     song:r.song.map(sec => ({bars:sec.bars, lanes:sec.lanes.map((l, ci) => Array.from({length:sec.bars*BAR}, (_, k) => cleanEntry(Array.isArray(l) ? l[k] : null, lanesDef[ci].kind==="noise")))})),
     sec:clampInt(r.sec, 0, r.song.length-1, 0), songMode:MODES.includes(r.songMode) ? r.songMode : "off", updated:Number.isFinite(+r.updated) ? +r.updated : Date.now()};
 }
@@ -296,7 +297,8 @@ function persist(){
 const save = () => { commit(); lib.songs[state.id] = songRec(); lib.current = state.id; persist(); };
 const stepDur = () => 60/state.bpm/4;
 let inputMode = "kb";                        // "kb" | "pad": which device was used last (drives the on-screen help)
-function setInput(m){ if (m!==inputMode){ inputMode = m; renderHelp(); refresh(); } }
+function setInput(m){ if (m==="kb" && state.strip){ state.strip = false; refresh(); }
+  if (m!==inputMode){ inputMode = m; renderHelp(); refresh(); } }
 
 // ---------- audio ----------
 const ctx = new (window.AudioContext||window.webkitAudioContext)();
@@ -371,7 +373,10 @@ function startSynth(ci, midi, when){            // configurable synth: a few osc
     x.connect(og).connect(g); x.start(when); oscs.push(x);
   });
   g.connect(lp).connect(chan[ci].gain);
-  return { stop(t){ g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0, t, env.r/3); oscs.forEach(x => x.stop(t+env.r+.1)); } };
+  return { stop(t){
+    g.gain.cancelScheduledValues(t);                                                  // (this also drops the fade-in, so a note released early would stay silent)
+    if (t < when+env.a) g.gain.linearRampToValueAtTime(c.level*Math.max(0, t-when)/env.a, t);   // rebuild the fade-in up to the release point
+    g.gain.setTargetAtTime(0, t, env.r/3); oscs.forEach(x => x.stop(t+env.r+.1)); } };
 }
 function startVoice(ci, midi, when, chord, dur=Infinity, block=false){
   if (chord && block){ const vs = chord.map(i => startVoice(ci, midi+i, when, null, dur)); return { stop(t){ vs.forEach(v => v.stop(t)); } }; }
@@ -470,9 +475,10 @@ function pump(){
 function start(countin){
   ctx.resume();
   const tl = timeline(leadList()), mode = tl.total ? state.songMode : "off";            // nothing saved yet: just the loop
-  T = {n:0, next:ctx.currentTime+.06, countin, q:[], tl, mode, lead: mode==="play" ? 0 : tl.total}; pump(); timer = setInterval(pump, 25); refresh();
+  T = {n:0, next:ctx.currentTime+.06, countin, q:[], tl, mode, lead: mode==="play" ? 0 : tl.total, startSec:state.sec}; pump(); timer = setInterval(pump, 25); refresh();
 }
-function stop(){ clearInterval(timer); timer = null; T = null; state.rec = state.armed = false; state.playSec = -1; refresh(); }
+function stop(){ clearInterval(timer); timer = null; const back = T && T.mode==="play" ? T.startSec : null; T = null; if (back!==null && state.song[back]) actions.secGo(back);     // whole-song playback moves the view along; stopping returns you to where you started
+  state.rec = state.armed = false; state.playSec = -1; refresh(); }
 function position(){          // fractional step index since transport start (or null)
   if (!T) return null; const now = ctx.currentTime; let e = null;
   for (const x of T.q) if (x.time <= now) e = x;
@@ -508,7 +514,7 @@ const actions = {
   oct(d){ state.oct[state.ch] = Math.max(-2, Math.min(2, state.oct[state.ch]+d)); refresh(); },
   bpm(d){ state.bpm = Math.max(60, Math.min(220, Math.round(state.bpm/5)*5 + d)); refresh(); save(); toast("bpm "+state.bpm); },
   metro(){ state.metro = !state.metro; refresh(); },
-  vol(d, quiet){ const ci = state.ch; state.vol[ci] = Math.max(0, Math.min(1, Math.round((state.vol[ci]+d)*1000)/1000));
+  vol(d, quiet){ const ci = state.ch; state.vol[ci] = Math.max(0, Math.min(VOL_MAX, Math.round((state.vol[ci]+d)*1000)/1000));
                  applyVol(ci); refresh(); if (!quiet) save(); },
   bars(d){ const i = Math.max(0, Math.min(BAR_OPTIONS.length-1, BAR_OPTIONS.indexOf(state.bars)+d)); if (BAR_OPTIONS[i]===state.bars) return;
            pushUndo(); state.bars = BAR_OPTIONS[i]; STEPS = state.bars*BAR; refresh(); save(); },
@@ -516,7 +522,9 @@ const actions = {
            if (next===state.sound) return toast("no other sound set has "+CHANNELS.length+" lanes: start a new song in it (Songs panel)");
            if (state.bpm===SOUNDS[state.sound].bpm) state.bpm = SOUNDS[next].bpm;       // follow the new set's usual tempo unless you changed it
            state.sound = next; applySound(); CHANNELS.forEach((_, ci) => applyVol(ci)); save(); renderHelp(); refresh(); toast("sound set: "+SOUNDS[next].label); },
-  lane(i){ state.ch = (i+CHANNELS.length)%CHANNELS.length; refresh(); },
+  lane(i){ state.ch = (i+CHANNELS.length)%CHANNELS.length; state.strip = false; refresh(); },
+  focusMove(d){ const n = CHANNELS.length, at = state.strip ? n : state.ch, to = (at+d+n+1)%(n+1);       // lanes, then the sections row, then back to the first lane
+                state.strip = to===n; if (!state.strip) state.ch = to; refresh(); },
   // song: the loop you play on IS the selected section; switching saves it back first
   secGo(i){ i = Math.max(0, Math.min(state.song.length-1, i)); if (i===state.sec) return; commit(); state.sec = i; loadSection(i); save(); refresh(); },
   secNew(){ pushUndo(); state.song.splice(state.sec+1, 0, snapshot()); state.sec++; loadSection(state.sec); save(); refresh();
@@ -648,6 +656,16 @@ function stickStep(a, v){          // a stick axis as a d-pad: fires once per pu
   if (now > a.t){ a.t = now+160; a.rep = true; return dir; }
   return 0;
 }
+function stripNav(d, repeat){                // move along the sections; with Y held, move the section itself
+  if (padHeld[3]){ const to = state.sec+d; if (to>=0 && to<state.song.length) actions.secMove(state.sec, to); return; }
+  if (d>0 && state.sec===state.song.length-1){ if (!repeat) actions.secNew(); } else actions.secGo(state.sec+d);        // past the last one adds a new one (not while held)
+}
+function stripButton(i){                      // controller buttons while the sections row is focused
+  if (i===14 || i===15) stripNav(i===15 ? 1 : -1, false);
+  else if (i===0) actions.secNew();           // A: new section (a copy of this one)
+  else if (i===2) actions.secDel();           // X: delete this section
+  else if (i===1 || i===12) actions.focusMove(-1);   // B or D-pad up: back to the lanes
+}
 function pollPad(){
   const gp = [...navigator.getGamepads()].find(g => g && g.connected);
   if ((gp ? gp.id : null) !== padId){ padId = gp ? gp.id : null; $("pad").textContent = padId ? "\u{1F3AE} " + padId.replace(/\s*\(.*\)/,"") : ""; }
@@ -660,10 +678,9 @@ function pollPad(){
   const sx = stickStep(rs.x, gp.axes[2] || 0), sy = stickStep(rs.y, gp.axes[3] || 0);   // right stick
   if (sx || sy){
     setInput("pad");
-    if (sy) actions.lane(state.ch+sy);                                                 // up/down: lane
+    if (sy) actions.focusMove(sy);                                                     // up/down: lane, then the sections row
     if (sx && padHeld[PAD_MODIFIER]){ if (padTap[PAD_MODIFIER]) padTap[PAD_MODIFIER].used = true; actions.bpm(sx*(rs.x.rep ? 10 : 5)); }       // LB held + left/right: tempo (10 while held)
-    else if (sx){                                                                      // left/right: section; past the last one adds a new one (not while held)
-      if (sx>0 && state.sec===state.song.length-1){ if (!rs.x.rep) actions.secNew(); } else actions.secGo(state.sec+sx); }
+    else if (sx) stripNav(sx, rs.x.rep);                                               // left/right: section
   }
   gp.buttons.forEach((b, i) => {
     if (b.pressed === !!padHeld[i]) return;
@@ -675,6 +692,7 @@ function pollPad(){
     setInput("pad"); ctx.resume();
     if (row && row.act) return DO[row.act]();
     if (row){ const t = padTap[i] = {fired:false, used:false}; if (row.hold) t.timer = setTimeout(() => { t.fired = true; DO[row.hold](); }, HOLD_MS); return; }
+    if (state.strip) return stripButton(i);                                            // sections row: buttons edit sections instead of playing notes
     const noise = CHANNELS[state.ch].kind==="noise";
     if (noise && i in PAD_DRUMS) trigger(id, null, DRUMS.find(d=>d.id===PAD_DRUMS[i]));
     else if (!noise && i in PAD_NOTES) trigger(id, PAD_NOTES[i], null, chordFor(padHeld[7], padHeld[6]));   // RT = major, LT = minor, both = dominant 7th (lofi)
@@ -708,7 +726,7 @@ function stepTokens(seq, steps){           // one token per 16th step: note / [c
 }
 function laneCode(ci, seq, bars){          // one lane's patterns plus its sound (stacked when notes overlap), or null when it is silent
   const layers = noteLayers(seq, bars*BAR); if (!layers.length) return null;
-  const c = CHANNELS[ci], pg = state.vol[ci]<1 ? ".postgain("+state.vol[ci]+")" : "";
+  const c = CHANNELS[ci], pg = state.vol[ci]!==1 ? ".postgain("+state.vol[ci]+")" : "";
   const codes = layers.map(layer => {
     const t = stepTokens(layer, bars*BAR), groups = Array.from({length:bars}, (_, b) => t.slice(b*BAR, (b+1)*BAR).join(" "));
     const pat = groups.every(g => g===groups[0]) ? "["+groups[0]+"]" : "<"+groups.map(g => "["+g+"]").join(" ")+">";
@@ -808,7 +826,8 @@ function laneHint(ci){
                           : "octave "+(state.oct[ci]>=0?"+":"")+state.oct[ci]);
 }
 function refresh(){
-  cv.forEach((l, ci) => { l.el.classList.toggle("sel", ci===state.ch);
+  songEl.classList.toggle("sel", state.strip);
+  cv.forEach((l, ci) => { l.el.classList.toggle("sel", !state.strip && ci===state.ch);
     l.tag.innerHTML = (ci+1)+" "+CHANNELS[ci].name+"<small>"+laneHint(ci)+"</small>"; });
   songEl.lastChild.innerHTML = "Sections<small>section "+(state.sec+1)+" of "+state.song.length+" \u00b7 hearing: "+MODE_LABEL[state.songMode]+" \u00b7 drag to reorder, drop on the bin to delete</small>";
   $("bPlay").innerHTML = T ? "&#9632; Stop" : "&#9654; Play"; $("bPlay").classList.toggle("on", !!T);
@@ -925,6 +944,10 @@ $("songList").onclick = e => {
 function draw(){
   pollPad();
   const pos = position(), rel = pos===null ? null : pos - T.countin, relD = rel===null ? null : rel - T.lead;   // relD: steps into your new section
+  if (T && T.mode==="play" && rel!==null && rel>=0){                        // whole song: the lanes follow the section that is playing
+    const at = rel % T.tl.total, it = T.tl.items.find(x => at >= x.start && at < x.start+x.len);
+    if (it && it.idx!==state.sec) actions.secGo(it.idx);
+  }
   const head = relD!==null && relD>=0 && T.mode!=="play" ? Math.floor(relD)%STEPS : -1;
   cv.forEach((l, ci) => {
     const cvs = l.canvas, dpr = devicePixelRatio||1, w = l.el.clientWidth, h = l.el.clientHeight;
