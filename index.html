@@ -17,6 +17,14 @@ header .sp{flex:1}
 #tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 #tools .lbl{color:var(--dim)}
 #tools small{color:var(--dim);font-size:12px}
+#bottom{display:flex;gap:8px;min-height:0}
+#bottom .lane{flex:1;min-width:0}
+.panel{width:430px;flex:none;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:6px 10px;display:flex;flex-direction:column;gap:5px}
+.panel .plabel{color:var(--text);font-weight:bold}
+.panel small{color:var(--dim);font-weight:normal;font-size:11px;margin-left:8px;white-space:nowrap}
+.panel .plabel{white-space:nowrap}
+#slots{display:flex;gap:6px}
+#slots button{padding:2px 10px;line-height:1.3}
 button.slot{padding:3px 10px;min-width:34px}
 button.slot.full{border-color:var(--accent);color:var(--accent)}
 button.slot.cur{background:var(--accent);color:#14111f}
@@ -61,7 +69,6 @@ a.btn:hover{border-color:var(--accent)}
     <button id="bBars"></button>
     <button id="bMetro">Metronome</button>
     <button id="bScope"></button>
-    <button id="bSong">Play song</button>
     <button id="bClear">Clear lane</button>
     <button id="bClearAll">Clear all</button>
     <span id="status"></span><span id="pad"></span>
@@ -71,11 +78,7 @@ a.btn:hover{border-color:var(--accent)}
   <div id="tools">
     <button id="bUndo">&#8630; Undo</button>
     <button id="bSound"></button>
-    <button id="bNewSec">+ Section</button>
-    <button id="bDelSec">Delete section</button>
     <button id="bAudio">&#9210; Record audio</button>
-    <span class="lbl">Clips</span><span id="slots"></span>
-    <small id="slotHint">click: save (empty) / load onto this lane · shift-click: overwrite · right-click: empty</small>
   </div>
   <div id="lanes"></div>
   <footer id="help"></footer>
@@ -132,7 +135,7 @@ const CHORD_SETS = {                          // hold RT / LT (keyboard Q / B); 
   lofi: {rt:{iv:[0,4,7,11], block:true}, lt:{iv:[0,3,7,10], block:true}, both:{iv:[0,4,7,10], block:true}},  // maj7 / min7 / dom7, block chords
 };
 const chordFor = (rt, lt) => rt||lt ? CHORD_SETS[state.sound][rt&&lt ? "both" : rt ? "rt" : "lt"] : null;
-const MODES = ["off","last","all"];            // playback scope (LB): this section / previous + this / the song up to here. "play" = the Play song button
+const MODES = ["off","last","all","play"];     // what you hear (LB cycles it): this section / previous + this / the song up to here / the whole song
 const MODE_LABEL = {off:"this section", last:"previous + this", all:"song up to here", play:"whole song"};
 const KEYS = {play:" ", rec:"r", clear:"c", octDown:"z", octUp:"x", metro:"m", exp:"v", volDown:"[", volUp:"]", barsDown:",", barsUp:".", addSong:"n", scope:"/", tempoDown:"-", tempoUp:"="};
 
@@ -148,10 +151,9 @@ try { const s = JSON.parse(localStorage.getItem("nes-keys")||"null");
       if (Array.isArray(s.song)) state.song = s.song.filter(x => x && typeof x.bars==="number" && Array.isArray(x.lanes) && x.lanes.length===CHANNELS.length);
       state.songMode = MODES.includes(s.songMode) ? s.songMode : "off";
       if (SOUNDS[s.sound]) state.sound = s.sound; } } catch(e){}
-let scopeBefore = "off", ready = false;      // scopeBefore: the scope to go back to after Play song
-const save = () => { commit(); try { localStorage.setItem("nes-keys", JSON.stringify({bpm:state.bpm, bars:state.bars, seq:state.seq, vol:state.vol, clips:state.clips, song:state.song, songMode:state.songMode==="play" ? scopeBefore : state.songMode, sound:state.sound})); } catch(e){} };
+let ready = false;
+const save = () => { commit(); try { localStorage.setItem("nes-keys", JSON.stringify({bpm:state.bpm, bars:state.bars, seq:state.seq, vol:state.vol, clips:state.clips, song:state.song, songMode:state.songMode, sound:state.sound})); } catch(e){} };
 const stepDur = () => 60/state.bpm/4;
-const hearing = () => MODE_LABEL[state.songMode==='play' ? scopeBefore : state.songMode];      // the scope shown in the UI (Play song doesn't replace it)
 let inputMode = "kb";                        // "kb" | "pad": which device was used last (drives the on-screen help)
 function setInput(m){ if (m!==inputMode){ inputMode = m; renderHelp(); refresh(); } }
 
@@ -302,7 +304,7 @@ function start(countin){
   const tl = timeline(leadList()), mode = tl.total ? state.songMode : "off";            // nothing saved yet: just the loop
   T = {n:0, next:ctx.currentTime+.06, countin, q:[], tl, mode, lead: mode==="play" ? 0 : tl.total}; pump(); timer = setInterval(pump, 25); refresh();
 }
-function stop(){ clearInterval(timer); timer = null; T = null; state.rec = state.armed = false; state.playSec = -1; if (state.songMode==="play") state.songMode = scopeBefore; refresh(); }
+function stop(){ clearInterval(timer); timer = null; T = null; state.rec = state.armed = false; state.playSec = -1; refresh(); }
 function position(){          // fractional step index since transport start (or null)
   if (!T) return null; const now = ctx.currentTime; let e = null;
   for (const x of T.q) if (x.time <= now) e = x;
@@ -324,7 +326,7 @@ function pushUndo(){
 const actions = {
   play(){ ctx.resume(); T ? stop() : start(BAR); },          // always 4 empty count-in beats before bar 1
   rec(){ recPushed = false; ctx.resume();
-    if (state.songMode==="play") return toast("playing the whole song: stop it, then record");
+    if (state.songMode==="play") return toast("hearing the whole song: press LB to pick another mode, then record");
     if (state.rec || state.armed){ state.rec = state.armed = false; refresh(); }
     else if (!T){ state.rec = true; start(BAR); }
     else { state.armed = true; refresh(); } },                // already playing: start recording at bar 1 of the next pass
@@ -348,12 +350,12 @@ const actions = {
   secGo(i){ i = Math.max(0, Math.min(state.song.length-1, i)); if (i===state.sec) return; commit(); state.sec = i; loadSection(i); save(); refresh(); },
   secNew(){ pushUndo(); state.song.splice(state.sec+1, 0, snapshot()); state.sec++; loadSection(state.sec); save(); refresh();
             toast("section "+(state.sec+1)+" added, a copy of the one before (RB clears a lane)"); },
+  secMove(from, to){ if (from===to) return; pushUndo(); commit(); const [sec] = state.song.splice(from, 1); state.song.splice(to, 0, sec);
+                     state.sec = to; loadSection(to); save(); refresh(); toast("section moved to "+(to+1)); },
   secDel(){ pushUndo();
     if (state.song.length<2){ state.seq.forEach(l => l.fill(null)); save(); refresh(); return toast("cleared: a song keeps at least one section"); }
     state.song.splice(state.sec, 1); state.sec = Math.min(state.sec, state.song.length-1); loadSection(state.sec); save(); refresh(); toast("section deleted"); },
-  scope(){ if (state.songMode==="play") return; state.songMode = MODES[(MODES.indexOf(state.songMode)+1)%MODES.length]; save(); refresh(); toast("playback: "+MODE_LABEL[state.songMode]); },
-  playSong(){ ctx.resume(); if (T && state.songMode==="play") return stop(); if (T) stop();
-              scopeBefore = state.songMode; state.songMode = "play"; state.rec = state.armed = false; start(BAR); },
+  scope(){ state.songMode = MODES[(MODES.indexOf(state.songMode)+1)%MODES.length]; save(); refresh(); toast("playback: "+MODE_LABEL[state.songMode]); },
   audioRec(){             // record what you hear to a file in Downloads (so a song can be shared)
     if (audioRecorder){ audioRecorder.stop(); return; }
     const type = ["audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"].find(t => MediaRecorder.isTypeSupported(t));
@@ -608,18 +610,31 @@ CHANNELS.forEach((c, ci) => {
     addEventListener("pointermove", move); addEventListener("pointerup", up); };
   lanesEl.appendChild(d); cv.push({el:d, canvas:d.firstChild, tag:d.lastChild});
 });
-const chipLayout = (n, w) => { const cw = Math.max(48, Math.min(96, (w-20-6*(n-1))/n)); return {cw, off:Math.max(0, 10+(state.sec+1)*(cw+6)-w)}; };    // scrolls so the selected chip stays in view
-function chipItems(){            // one chip per section, then a + chip
-  return [...state.song.map((sec, i) => ({sec, i})), {plus:true}];
-}
+const TRASH_W = 64;                                                   // the bin at the far end of the sections strip
+const chipLayout = (n, w) => { const cw = Math.max(48, Math.min(96, (w-20-TRASH_W-6*(n-1))/n)); return {cw, off:Math.max(0, 10+(state.sec+1)*(cw+6)-(w-TRASH_W))}; };    // scrolls so the selected chip stays in view
+const chipItems = () => [...state.song.map((sec, i) => ({sec, i})), {plus:true}];       // one chip per section, then a + chip
+const bottomEl = document.createElement("div"); bottomEl.id = "bottom"; lanesEl.appendChild(bottomEl);
 const songEl = document.createElement("div"); songEl.className = "lane"; songEl.style.setProperty("--lc", "#9aa7ff");
-songEl.innerHTML = '<canvas></canvas><div class="tag"></div>'; lanesEl.appendChild(songEl);
-songEl.onclick = ev => {                       // click a chip to select that section, + to add one
-  const items = chipItems(), L = chipLayout(items.length, songEl.clientWidth);
-  const i = Math.floor((ev.clientX - songEl.getBoundingClientRect().left - 10 + L.off) / (L.cw+6));
-  if (i<0 || i>=items.length) return;
-  if (items[i].plus) actions.secNew(); else actions.secGo(items[i].i);
+songEl.innerHTML = '<canvas></canvas><div class="tag"></div>'; bottomEl.appendChild(songEl);
+const clipsEl = document.createElement("div"); clipsEl.className = "panel"; bottomEl.appendChild(clipsEl);
+clipsEl.innerHTML = '<div class="plabel" title="click an empty slot: save this lane. click a full slot: load it onto this lane. shift-click: overwrite. right-click: empty it">Clips<small>click: save / load \u00b7 shift: overwrite \u00b7 right-click: empty</small></div><div id="slots"></div>';
+let drag = null;                                                      // dragging a section chip: {from, startX, x, moved, over}  (over = a slot index, or "bin")
+const chipAt = (x, L) => Math.floor((x - 10 + L.off) / (L.cw+6));
+const stripX = ev => ev.clientX - songEl.getBoundingClientRect().left;
+songEl.onpointerdown = ev => {
+  const n = state.song.length, L = chipLayout(n+1, songEl.clientWidth), x = stripX(ev), i = chipAt(x, L);
+  if (i<0 || i>n) return;
+  if (i===n) return actions.secNew();                                 // the + chip
+  actions.secGo(i); drag = {from:i, startX:x, x, moved:false, over:i}; try { songEl.setPointerCapture(ev.pointerId); } catch(e){}
 };
+songEl.onpointermove = ev => {
+  if (!drag) return;
+  const n = state.song.length, w = songEl.clientWidth, L = chipLayout(n+1, w), x = stripX(ev);
+  drag.x = x; drag.moved = drag.moved || Math.abs(x-drag.startX) > 6;
+  drag.over = x > w-TRASH_W ? "bin" : Math.max(0, Math.min(n-1, chipAt(x, L)));
+};
+songEl.onpointerup = () => { const d = drag; drag = null; if (!d || !d.moved) return; if (d.over==="bin") actions.secDel(); else actions.secMove(d.from, d.over); };
+songEl.onpointercancel = () => { drag = null; };
 function noteLabel(ci, e){          // the key (or pad button) that plays this entry in the current octave; an arrow if it is in another octave
   if (e.drum) return inputMode==="pad" ? padDrumBtn[e.drum] : DRUMS.find(d => d.id===e.drum).key.toUpperCase();
   const d = e.note - CHANNELS[ci].base - state.oct[ci]*12;                      // semitones above the lane's current octave
@@ -635,20 +650,20 @@ function laneHint(ci){
 function refresh(){
   cv.forEach((l, ci) => { l.el.classList.toggle("sel", ci===state.ch);
     l.tag.innerHTML = (ci+1)+" "+CHANNELS[ci].name+"<small>"+laneHint(ci)+"</small>"; });
-  songEl.lastChild.innerHTML = "Sections<small>section "+(state.sec+1)+" of "+state.song.length+" \u00b7 hearing: "+hearing()+(state.songMode==="play" ? " \u00b7 PLAYING THE WHOLE SONG" : "")+"</small>";
+  songEl.lastChild.innerHTML = "Sections<small>section "+(state.sec+1)+" of "+state.song.length+" \u00b7 hearing: "+MODE_LABEL[state.songMode]+" \u00b7 drag to reorder, drop on the bin to delete</small>";
   $("bPlay").innerHTML = T ? "&#9632; Stop" : "&#9654; Play"; $("bPlay").classList.toggle("on", !!T);
   $("bRec").classList.toggle("on", state.rec); $("bRec").classList.toggle("armed", state.armed); $("bMetro").classList.toggle("on", state.metro);
-  $("bUndo").disabled = !undoStack.length; $("bSound").textContent = "Sound: "+SOUNDS[state.sound].label; $("bDelSec").disabled = !state.song.length;
+  $("bUndo").disabled = !undoStack.length; $("bSound").textContent = "Sound: "+SOUNDS[state.sound].label;
   $("bAudio").classList.toggle("rec", !!audioRecorder); $("bAudio").classList.toggle("on", !!audioRecorder); $("bAudio").innerHTML = audioRecorder ? "&#9632; Stop audio" : "&#9210; Record audio";
   [...$("slots").children].forEach((b, i) => { b.classList.toggle("full", !!state.clips[i]); b.classList.toggle("cur", state.cur===i); b.title = slotText(i); });
-  $("bScope").textContent = "Hear: "+hearing(); $("bSong").classList.toggle("on", state.songMode==="play"); $("bSong").innerHTML = state.songMode==="play" ? "&#9632; Stop song" : "&#9654; Play song";
+  $("bScope").textContent = "Hear: "+MODE_LABEL[state.songMode];
   $("bpm").value = state.bpm; $("bBars").textContent = "Loop: "+state.bars+(state.bars===1?" bar":" bars");
 }
-$("bUndo").onclick = actions.undo; $("bSound").onclick = actions.sound; $("bNewSec").onclick = actions.secNew; $("bDelSec").onclick = actions.secDel; $("bAudio").onclick = actions.audioRec;
+$("bUndo").onclick = actions.undo; $("bSound").onclick = actions.sound; $("bAudio").onclick = actions.audioRec;
 for (let i=0;i<CLIP_SLOTS;i++){ const b = document.createElement("button"); b.className = "slot"; b.textContent = i+1;
   b.onclick = ev => actions.clipSlot(i, ev); b.oncontextmenu = ev => { ev.preventDefault(); actions.clipClear(i); }; $("slots").appendChild(b); }
 $("bPlay").onclick = actions.play; $("bRec").onclick = actions.rec;
-$("bMetro").onclick = actions.metro; $("bScope").onclick = actions.scope; $("bSong").onclick = actions.playSong; $("bBars").onclick = () => actions.bars(state.bars===8 ? -3 : 1); $("bClear").onclick = actions.clear;
+$("bMetro").onclick = actions.metro; $("bScope").onclick = actions.scope; $("bBars").onclick = () => actions.bars(state.bars===8 ? -3 : 1); $("bClear").onclick = actions.clear;
 $("bClearAll").onclick = () => { pushUndo(); state.seq.forEach(s=>s.fill(null)); save(); toast("all cleared"); };
 $("bpm").onchange = e => { state.bpm = Math.max(60, Math.min(220, +e.target.value||120)); refresh(); save(); };
 const HELP = {
@@ -710,23 +725,30 @@ function draw(){
     for (let i=0;i<n;i++){ const x = i/(n-1)*w, y = mid - Math.max(-.45,Math.min(.45,buf[s0+i]))*amp*.98; i?g.lineTo(x,y):g.moveTo(x,y); }
     g.stroke();
   });
-  { // song row: one chip per section
+  { // sections strip: one chip per section, a + chip, and the bin
     const c5 = songEl.firstChild, dpr = devicePixelRatio||1, w = songEl.clientWidth, h = songEl.clientHeight;
     if (c5.width!==w*dpr || c5.height!==h*dpr){ c5.width = w*dpr; c5.height = h*dpr; }
     const g = c5.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,w,h);
-    const items = chipItems(), n = items.length, letters = sectionLetters(), L = chipLayout(n, w), cw = L.cw, y = 24, chH = h-y-8;
-    items.forEach((item, k) => {
-      const x = 10 + k*(cw+6) - L.off;
+    const items = chipItems(), n = items.length, letters = sectionLetters(), L = chipLayout(n, w), cw = L.cw, y = 24, chH = h-y-8, moving = drag && drag.moved;
+    const chip = (item, x, ghost) => {
       if (item.plus){ g.strokeStyle = "rgba(255,255,255,.3)"; g.setLineDash([4,3]); g.strokeRect(x, y, cw, chH); g.setLineDash([]);
                       g.fillStyle = "rgba(232,226,255,.7)"; g.textBaseline = "middle"; g.font = "bold 20px monospace"; g.fillText("+", x+cw/2-6, y+chH/2); return; }
-      const sec = item.sec, picked = state.sec===item.i;
-      const playing = !!T && (state.playSec>=0 ? state.playSec===item.i : picked && state.songMode!=="play");
+      const sec = item.sec, picked = state.sec===item.i, playing = !ghost && !!T && (state.playSec>=0 ? state.playSec===item.i : picked && state.songMode!=="play");
+      g.globalAlpha = ghost ? .8 : moving && drag.from===item.i ? .3 : 1;
       g.fillStyle = playing ? "rgba(154,167,255,.45)" : "rgba(255,255,255,.07)"; g.fillRect(x, y, cw, chH);
       g.strokeStyle = playing ? "#fff" : picked ? "#b794ff" : "rgba(255,255,255,.18)"; g.lineWidth = playing||picked ? 2 : 1; g.strokeRect(x, y, cw, chH);
       g.fillStyle = "#e8e2ff"; g.textBaseline = "middle"; g.font = "bold 15px monospace"; g.fillText((item.i+1)+letters[item.i], x+8, y+chH/2);
       g.font = "11px monospace"; g.fillStyle = "rgba(232,226,255,.6)"; g.fillText(sec.bars+"b", x+40, y+chH/2);
       CHANNELS.forEach((c, ci) => { g.fillStyle = sec.lanes[ci].slice(0, sec.bars*BAR).some(Boolean) ? c.color : "rgba(255,255,255,.12)"; g.fillRect(x+cw-8-(CHANNELS.length-ci)*8, y+chH/2-3, 6, 6); });
-    });
+      g.globalAlpha = 1;
+    };
+    items.forEach((item, k) => chip(item, 10 + k*(cw+6) - L.off, false));
+    if (moving && drag.over!=="bin"){ const mx = 10 + (drag.over + (drag.over>drag.from ? 1 : 0))*(cw+6) - L.off - 3; g.fillStyle = "#b794ff"; g.fillRect(mx, y-4, 3, chH+8); }
+    if (moving) chip(items[drag.from], drag.x - cw/2, true);
+    const bx = w-TRASH_W+6, hot = moving && drag.over==="bin";                                  // the bin
+    g.strokeStyle = hot ? "#ff5d7a" : "rgba(255,255,255,.35)"; g.fillStyle = hot ? "rgba(255,93,122,.25)" : "rgba(255,255,255,.05)"; g.lineWidth = 2;
+    g.fillRect(bx, y, TRASH_W-16, chH); g.strokeRect(bx, y, TRASH_W-16, chH);
+    const cx = bx+(TRASH_W-16)/2, cy = y+chH/2; g.beginPath(); g.moveTo(cx-9, cy-4); g.lineTo(cx-7, cy+10); g.lineTo(cx+7, cy+10); g.lineTo(cx+9, cy-4); g.moveTo(cx-11, cy-6); g.lineTo(cx+11, cy-6); g.moveTo(cx-3, cy-9); g.lineTo(cx+3, cy-9); g.stroke();
   }
   let st = "";
   if (ctx.state!=="running") st = "click page / press a key for sound";

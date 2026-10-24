@@ -38,11 +38,12 @@ Switch with the **Sound** button, or **L3** on the controller.
 
 - **Record:** press Record, wait out the 4-beat count-in, play. It loops and keeps layering.
 - **Sections:** the strip along the bottom is your song. The section you select *is* the loop you play on.
-  `+` adds a new one as a copy of the last, so you can vary it.
-- **Hear:** what plays while you work: just this section, the previous one first, or the whole song up to here.
-  **Play song** plays the whole thing once.
+  Click `+` to add one (a copy of the one before, so you can vary it). **Drag** a section to reorder it, or drop it on
+  the bin at the end to delete it.
+- **Hear:** what plays while you work, cycled with the **Hear** button (or LB): this section, the previous one first,
+  the song up to here, or the whole song (playback only, no recording).
 - **Bars:** drag over bars to select them (Shift = every lane), Ctrl+C / Ctrl+V to copy, even into another section.
-- **Clips:** eight slots for single-lane loops you want to reuse.
+- **Clips:** eight slots (bottom right) for single-lane loops you want to reuse.
 - **Undo:** Ctrl+Z, the Undo button, or hold RB. It covers clears, recordings, pastes and section changes.
 
 ## Controls
