@@ -246,6 +246,9 @@ function click(when, accent){
   o.connect(g).connect(master); o.start(when); o.stop(when+.06);
 }
 const drumLane = () => CHANNELS.findIndex(c => c.kind==="noise");
+// a step holds one entry; notes played at the same step ride along in entry.more, so a step can hold several notes
+const entriesAt = e => e ? [e, ...(e.more || [])] : [];
+const cloneEntry = e => e && {...e, ...(e.more ? {more:e.more.map(m => ({...m}))} : {})};
 const midiOf = (ci, semis) => CHANNELS[ci].base + state.oct[ci]*12 + semis;
 
 // ---------- transport ----------
@@ -266,7 +269,8 @@ function sectionLetters(){      // identical sections share a letter: A A B A C
   const seen = [];
   return state.song.map(sec => { const key = JSON.stringify([sec.bars, sec.lanes]); let i = seen.indexOf(key); if (i<0){ seen.push(key); i = seen.length-1; } return String.fromCharCode(65 + i%26); });
 }
-function playEntry(ci, e, time){
+function playEntry(ci, e, time){ entriesAt(e).forEach(n => playNote(ci, n, time)); }
+function playNote(ci, e, time){
   if (e.drum) hitDrum(DRUMS.find(d=>d.id===e.drum), time);
   else { const d = e.len*stepDur()*.95, v = startVoice(ci, e.note, time, e.chord, d, e.block); v.stop(time + d); }
 }
@@ -306,14 +310,14 @@ function position(){          // fractional step index since transport start (or
 }
 
 // ---------- actions ----------
-const snapshot = () => ({bars:state.bars, lanes:state.seq.map(l => l.slice(0, STEPS).map(e => e ? {...e} : null))});
+const snapshot = () => ({bars:state.bars, lanes:state.seq.map(l => l.slice(0, STEPS).map(e => cloneEntry(e)))});
 const undoStack = []; let recPushed = false;
 let sel = null, barClip = null;        // sel = bars you dragged over {l0,l1 lanes, a,b bars}; barClip = what Ctrl+C took
 const selBars = () => sel && {l0:sel.l0, l1:sel.l1, a:Math.min(sel.a, sel.b), b:Math.max(sel.a, sel.b)};
 function commit(){ if (ready && state.song[state.sec]) state.song[state.sec] = snapshot(); }       // the loop you play on is the selected section
 function loadSection(i){
   const sec = state.song[i]; state.bars = sec.bars; STEPS = sec.bars*BAR; sel = null;
-  state.seq.forEach((l, ci) => { for (let k=0;k<MAX_STEPS;k++){ const e = k<STEPS && sec.lanes[ci][k]; l[k] = e ? {...e} : null; } }); }
+  state.seq.forEach((l, ci) => { for (let k=0;k<MAX_STEPS;k++){ const e = k<STEPS && sec.lanes[ci][k]; l[k] = cloneEntry(e); } }); }
 function pushUndo(){
   commit(); undoStack.push(JSON.stringify({song:state.song, sec:state.sec}));
   if (undoStack.length > 30) undoStack.shift(); }
@@ -363,14 +367,14 @@ const actions = {
     audioRecorder.start(); refresh(); toast("recording audio: play, then press the button again to stop"); },
   // bars: drag over bars in the lanes (Shift = every lane), then copy / paste / clear
   barsCopy(){ const r = selBars(); if (!r) return toast("drag over some bars first (Shift = every lane)");
-    barClip = {l0:r.l0, n:r.b-r.a+1, lanes:state.seq.slice(r.l0, r.l1+1).map(l => l.slice(r.a*BAR, (r.b+1)*BAR).map(e => e ? {...e} : null))};
+    barClip = {l0:r.l0, n:r.b-r.a+1, lanes:state.seq.slice(r.l0, r.l1+1).map(l => l.slice(r.a*BAR, (r.b+1)*BAR).map(e => cloneEntry(e)))};
     toast("copied "+barClip.n+(barClip.n===1?" bar":" bars")+" \u00b7 pick a bar (any section) and Ctrl+V"); },
   barsPaste(){ if (!barClip) return toast("nothing copied yet: drag over bars, then Ctrl+C");
     const r = selBars(), start = r ? r.a : 0, l0 = barClip.lanes.length===1 ? (r ? r.l0 : state.ch) : barClip.l0;
     if (l0+barClip.lanes.length > CHANNELS.length) return toast("no room for those lanes");
     for (let k=0;k<barClip.lanes.length;k++) if ((CHANNELS[l0+k].kind==="noise") !== (CHANNELS[barClip.l0+k].kind==="noise")) return toast("drum bars only go on the drums lane");
     pushUndo(); let clipped = false;
-    barClip.lanes.forEach((steps, k) => steps.forEach((e, i) => { const d = start*BAR+i; if (d>=STEPS){ if (e) clipped = true; return; } state.seq[l0+k][d] = e ? {...e} : null; }));
+    barClip.lanes.forEach((steps, k) => steps.forEach((e, i) => { const d = start*BAR+i; if (d>=STEPS){ if (e) clipped = true; return; } state.seq[l0+k][d] = cloneEntry(e); }));
     sel = {l0, l1:l0+barClip.lanes.length-1, a:start, b:Math.min(state.bars-1, start+barClip.n-1)}; save(); refresh();
     toast("pasted"+(clipped ? " (the end didn't fit in this section)" : "")); },
   barsClear(){ const r = selBars(); if (!r) return; pushUndo();
@@ -380,7 +384,7 @@ const actions = {
   clipSlot(i, ev){ state.cur = i; if (ev.shiftKey || !state.clips[i]) actions.clipSave(); else actions.clipLoad(); },
   clipClear(i){ if (!state.clips[i]) return; state.clips[i] = null; save(); refresh(); toast("slot "+(i+1)+" emptied"); },
   clipSave(){
-    const ci = state.ch, steps = state.seq[ci].slice(0, STEPS).map(e => e ? {...e} : null);
+    const ci = state.ch, steps = state.seq[ci].slice(0, STEPS).map(e => cloneEntry(e));
     if (!steps.some(Boolean)) return toast("this lane is empty, nothing to save");
     state.clips[state.cur] = {lane:CHANNELS[ci].name, drums:CHANNELS[ci].kind==="noise", bars:state.bars, steps};
     save(); refresh(); toast("saved to slot "+(state.cur+1)); },
@@ -390,7 +394,7 @@ const actions = {
     if (slot.drums !== isDrums) return toast(slot.drums ? "drum clips only go on the drums lane" : "melody clips can't go on the drums lane");
     pushUndo();
     const len = slot.steps.length; if (len > STEPS){ state.bars = len/BAR; STEPS = len; }
-    for (let i=0;i<MAX_STEPS;i++){ const e = i<STEPS && slot.steps[i%len]; state.seq[ci][i] = e ? {...e} : null; }   // shorter clips repeat to fill the loop
+    for (let i=0;i<MAX_STEPS;i++){ const e = i<STEPS && slot.steps[i%len]; state.seq[ci][i] = cloneEntry(e); }   // shorter clips repeat to fill the loop
     save(); refresh(); toast("slot "+(state.cur+1)+" loaded onto "+c.name); },
 };
 const slotText = i => state.clips[i] ? "slot "+(i+1)+" · "+state.clips[i].lane+" · "+state.clips[i].bars+"b" : "slot "+(i+1)+" (empty)";
@@ -407,6 +411,14 @@ function noteDown(key){
   else { if (!(key in PIANO)) return false; trigger(key, PIANO[key], null, keyChord()); }
   return true;
 }
+function placeEntry(ci, pos, entry){      // a note at a step that already has one is added alongside it (the same note again replaces it)
+  const cur = state.seq[ci][pos], same = n => entry.drum ? n.drum===entry.drum : n.note===entry.note && !n.drum;
+  if (!cur){ state.seq[ci][pos] = entry; return; }
+  const i = entriesAt(cur).findIndex(same);
+  if (i===0){ if (cur.more) entry.more = cur.more; state.seq[ci][pos] = entry; }
+  else if (i>0) cur.more[i-1] = entry;
+  else (cur.more = cur.more || []).push(entry);
+}
 function trigger(id, semis, drum, chord){      // play (and record, if armed) one note or drum hit; id = what releases it
   const ci = state.ch; let entry, voice = null;
   if (drum){ hitDrum(drum, ctx.currentTime); entry = {drum:drum.id}; }
@@ -414,7 +426,7 @@ function trigger(id, semis, drum, chord){      // play (and record, if armed) on
   let placed = false;
   if (state.rec && T){
     const p = position(); const rel = p===null ? -1 : p - T.countin - T.lead;
-    if (rel >= -.5){ if (!recPushed){ pushUndo(); recPushed = true; } const pos = ((Math.round(rel)%STEPS)+STEPS)%STEPS; state.seq[ci][pos] = entry; placed = true; save(); }
+    if (rel >= -.5){ if (!recPushed){ pushUndo(); recPushed = true; } placeEntry(ci, ((Math.round(rel)%STEPS)+STEPS)%STEPS, entry); placed = true; save(); }
   }
   held[id] = {voice, entry, placed, t0:ctx.currentTime, ci};
 }
@@ -514,6 +526,15 @@ function pollPad(){
 }
 
 // ---------- export ----------
+function noteLayers(seq, steps){           // split a lane into single-voice layers: a note goes on the first layer that is free when it starts
+  const layers = [], ends = [];
+  for (let i=0;i<steps;i++) entriesAt(seq[i]).forEach(n => {
+    let k = ends.findIndex(end => end <= i);
+    if (k<0){ k = layers.length; layers.push(Array(steps).fill(null)); ends.push(0); }
+    layers[k][i] = n; ends[k] = i + (n.drum ? 1 : Math.max(1, n.len || 1));
+  });
+  return layers;
+}
 function stepTokens(seq, steps){           // one token per 16th step: note / [chord] / drum / ~ rest / _ held
   const out = Array(steps).fill("~");
   const starts = seq.slice(0, steps).map((e,i)=>e?i:-1).filter(i=>i>=0);
@@ -529,12 +550,15 @@ function stepTokens(seq, steps){           // one token per 16th step: note / [c
   });
   return out;
 }
-function laneCode(ci, seq, bars){          // one lane's pattern plus its sound, or null when it is silent
-  if (!seq.slice(0, bars*BAR).some(Boolean)) return null;
-  const t = stepTokens(seq, bars*BAR), groups = Array.from({length:bars}, (_, b) => t.slice(b*BAR, (b+1)*BAR).join(" "));
-  const pat = groups.every(g => g===groups[0]) ? "["+groups[0]+"]" : "<"+groups.map(g => "["+g+"]").join(" ")+">";
+function laneCode(ci, seq, bars){          // one lane's patterns plus its sound (stacked when notes overlap), or null when it is silent
+  const layers = noteLayers(seq, bars*BAR); if (!layers.length) return null;
   const c = CHANNELS[ci], pg = state.vol[ci]<1 ? ".postgain("+state.vol[ci]+")" : "";
-  return (c.kind==="noise" ? "s" : "note")+'("'+pat+'")'+c.strudel+pg;
+  const codes = layers.map(layer => {
+    const t = stepTokens(layer, bars*BAR), groups = Array.from({length:bars}, (_, b) => t.slice(b*BAR, (b+1)*BAR).join(" "));
+    const pat = groups.every(g => g===groups[0]) ? "["+groups[0]+"]" : "<"+groups.map(g => "["+g+"]").join(" ")+">";
+    return (c.kind==="noise" ? "s" : "note")+'("'+pat+'")'+c.strudel+pg;
+  });
+  return codes.length>1 ? "stack(\n    "+codes.join(",\n    ")+"\n  )" : codes[0];
 }
 function toStrudel(){
   commit();
@@ -660,7 +684,7 @@ function draw(){
     const cvs = l.canvas, dpr = devicePixelRatio||1, w = l.el.clientWidth, h = l.el.clientHeight;
     if (cvs.width!==w*dpr || cvs.height!==h*dpr){ cvs.width = w*dpr; cvs.height = h*dpr; }
     const g = cvs.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,w,h);
-    const col = CHANNELS[ci].color, stripH = 14, mid = (h-stripH)/2+4;
+    const col = CHANNELS[ci].color, stripH = 20, mid = (h-stripH)/2+4;
     // step strip along the bottom
     const cw = w/STEPS, sy = h-stripH-3, ghost = state.song[state.sec-1];
     for (let i=0;i<STEPS;i++){
@@ -669,9 +693,11 @@ function draw(){
       const ge = ghost && ghost.lanes[ci][i % (ghost.bars*BAR)];      // the previous section, dimly, so you can line things up
       if (ge){ g.fillStyle = col; g.globalAlpha=.25; g.fillRect(i*cw+1, sy, cw*(ge.len||1)-2, stripH); g.globalAlpha=1; }
       const e = state.seq[ci][i];
-      if (e){ g.fillStyle = col; g.globalAlpha=.9; g.fillRect(i*cw+1, sy, cw*(e.len||1)-2, stripH); g.globalAlpha=1;
-              if (e.chord){ g.fillStyle = "#fff"; g.fillRect(i*cw+1, sy, cw*(e.len||1)-2, 3); }
-              if (cw*(e.len||1) > 11){ g.fillStyle = "#14111f"; g.font = "bold 10px monospace"; g.textBaseline = "middle"; g.fillText(noteLabel(ci, e), i*cw+4, sy+stripH/2+(e.chord?1.5:0)); } }
+      if (e){ const list = entriesAt(e), sh = stripH/list.length;       // several notes at one step are drawn as stacked slices
+              list.forEach((x, j) => { g.fillStyle = col; g.globalAlpha=.9; g.fillRect(i*cw+1, sy+j*sh, cw*(x.len||1)-2, sh-(j<list.length-1?1:0)); g.globalAlpha=1;
+                if (x.chord){ g.fillStyle = "#fff"; g.fillRect(i*cw+1, sy+j*sh, cw*(x.len||1)-2, Math.min(3, sh)); } });
+              const label = list.slice(0, 3).map(x => noteLabel(ci, x)).join("+"); g.font = "bold 10px monospace";
+              if (g.measureText(label).width+6 <= cw*(e.len||1)){ g.fillStyle = "#14111f"; g.textBaseline = "middle"; g.fillText(label, i*cw+4, sy+stripH/2+(e.chord?1.5:0)); } }
       if (i===head){ g.strokeStyle="#fff"; g.lineWidth=2; g.strokeRect(i*cw+1, sy, cw-2, stripH); }
     }
     const r = selBars();

@@ -12,8 +12,9 @@ It is one HTML file. No install, no build, no accounts: open `index.html`.
 
 - **Is:** a fast way to get a musical idea out of your head and into a loop, without knowing music theory.
   The controller plays a pentatonic scale, so there are no wrong notes. Hold a trigger and a button plays a whole chord.
-- **Isn't:** a DAW, or a serious tracker. Each lane records one note per 16th step (a chord counts as one note),
-  there is no mixing or effects, and the sounds are small synths, not samples.
+- **Isn't:** a DAW, or a serious tracker. There is no mixing or effects, and the sounds are small synths, not samples.
+  Play several notes at once and they are all recorded (a kick and a hat on the same step, say); overlapping notes
+  come out as stacked layers in the Strudel export.
 
 ## Run it
 
