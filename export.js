@@ -30,8 +30,9 @@ function laneCode(ci, seq, bars, vol){          // one lane's patterns plus its 
   const c = CHANNELS[ci], pg = vol!==1 ? ".postgain("+vol+")" : "";
   const codes = layers.map(layer => {
     const t = stepTokens(layer, bars*BAR), groups = Array.from({length:bars}, (_, b) => t.slice(b*BAR, (b+1)*BAR).join(" "));
-    const pat = groups.every(g => g===groups[0]) ? "["+groups[0]+"]" : "<"+groups.map(g => "["+g+"]").join(" ")+">";
-    return (c.kind==="noise" ? "s" : "note")+'("'+pat+'")'+c.strudel+pg;
+    const tied = groups.some(g => g.startsWith("_"));            // a note held over a bar line: "_" can't start a group, so play the bars as one long pattern instead
+    const pat = tied ? "["+groups.join(" ")+"]" : groups.every(g => g===groups[0]) ? "["+groups[0]+"]" : "<"+groups.map(g => "["+g+"]").join(" ")+">";
+    return (c.kind==="noise" ? "s" : "note")+'("'+pat+'")'+(tied ? ".slow("+bars+")" : "")+c.strudel+pg;
   });
   return codes.length>1 ? "stack(\n    "+codes.join(",\n    ")+"\n  )" : codes[0];
 }
