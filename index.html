@@ -176,6 +176,27 @@ const newId = () => Date.now().toString(36)+Math.random().toString(36).slice(2, 
 const cleanName = n => String(n||"").replace(/\s+/g, " ").trim().slice(0, 60);
 const newSong = (name, sound) => ({id:newId(), name, sound, bpm:SOUNDS[sound].bpm, vol:Array(laneCount(sound)).fill(1), song:[blankSection(sound)], sec:0, songMode:"off", updated:Date.now()});
 const validSong = r => !!(r && SOUNDS[r.sound] && Array.isArray(r.song) && r.song.length && r.song.every(x => x && BAR_OPTIONS.includes(x.bars) && Array.isArray(x.lanes) && x.lanes.length===laneCount(r.sound)));
+const clampInt = (v, lo, hi, d) => Number.isFinite(+v) ? Math.max(lo, Math.min(hi, Math.round(+v))) : d;
+function cleanEntry(e, noise){                                   // rebuild an entry from typed fields only: songs from files end up inside generated Strudel code
+  if (!e || typeof e!=="object") return null;
+  let out = null;
+  if (noise){ if (DRUMS.some(d => d.id===e.drum)) out = {drum:e.drum}; }
+  else if (Number.isInteger(e.note) && e.note>=0 && e.note<=127){
+    out = {note:e.note, len:clampInt(e.len, 1, MAX_STEPS, 1)};
+    if (Array.isArray(e.chord)){ const iv = e.chord.slice(0, 6).filter(x => Number.isInteger(x) && x>=-24 && x<=48); if (iv.length){ out.chord = iv; if (e.block) out.block = true; } }
+  }
+  if (out && Array.isArray(e.more)){ const m = e.more.slice(0, 8).map(x => cleanEntry(x, noise)).filter(Boolean); if (m.length) out.more = m; }
+  return out;
+}
+function sanitizeSong(r){                                         // a stored or imported song, or null when it can't be used
+  if (!validSong(r)) return null;
+  const n = laneCount(r.sound), lanesDef = SOUNDS[r.sound].lanes;
+  return {id:/^[a-z0-9]{4,24}$/.test(r.id) ? r.id : newId(), name:cleanName(r.name) || "Untitled", sound:r.sound,
+    bpm:clampInt(r.bpm, 60, 220, SOUNDS[r.sound].bpm),
+    vol:Array.from({length:n}, (_, i) => Number.isFinite(+(r.vol||[])[i]) ? Math.max(0, Math.min(1, +r.vol[i])) : 1),
+    song:r.song.map(sec => ({bars:sec.bars, lanes:sec.lanes.map((l, ci) => Array.from({length:sec.bars*BAR}, (_, k) => cleanEntry(Array.isArray(l) ? l[k] : null, lanesDef[ci].kind==="noise")))})),
+    sec:clampInt(r.sec, 0, r.song.length-1, 0), songMode:MODES.includes(r.songMode) ? r.songMode : "off", updated:Number.isFinite(+r.updated) ? +r.updated : Date.now()};
+}
 function legacySong(o){                                          // the old single save becomes a song: its sections, plus the loop you were working on
   const sound = SOUNDS[o.sound] ? o.sound : "nes", n = laneCount(sound), bars = BAR_OPTIONS.includes(o.bars) ? o.bars : 2;
   const song = (Array.isArray(o.song) ? o.song : []).filter(x => x && BAR_OPTIONS.includes(x.bars) && Array.isArray(x.lanes) && x.lanes.length===n);
@@ -187,10 +208,10 @@ function legacySong(o){                                          // the old sing
   return {id:newId(), name:"Untitled 1", sound, bpm:o.bpm||SOUNDS[sound].bpm, vol:Array.isArray(o.vol) && o.vol.length===n ? o.vol : Array(n).fill(1), song, sec:song.length-1, songMode:MODES.includes(o.songMode) ? o.songMode : "off", updated:Date.now()};
 }
 try { const j = JSON.parse(localStorage.getItem(LIB_KEY)||"null");
-      if (j && j.songs){ Object.values(j.songs).filter(validSong).forEach(r => { lib.songs[r.id] = r; }); lib.current = j.current;
+      if (j && j.songs){ Object.values(j.songs).map(sanitizeSong).filter(Boolean).forEach(r => { lib.songs[r.id] = r; }); lib.current = j.current;
                          if (Array.isArray(j.clips) && j.clips.length===CLIP_SLOTS) lib.clips = j.clips; } } catch(e){}
 if (!Object.keys(lib.songs).length) try { const o = JSON.parse(localStorage.getItem(OLD_KEY)||"null");
-      if (o){ const r = legacySong(o); if (validSong(r)){ lib.songs[r.id] = r; lib.current = r.id; } if (Array.isArray(o.clips) && o.clips.length===CLIP_SLOTS) lib.clips = o.clips; } } catch(e){}
+      if (o){ const r = sanitizeSong(legacySong(o)); if (r){ lib.songs[r.id] = r; lib.current = r.id; } if (Array.isArray(o.clips) && o.clips.length===CLIP_SLOTS) lib.clips = o.clips; } } catch(e){}
 if (!Object.keys(lib.songs).length){ const r = newSong("Untitled 1", "nes"); lib.songs[r.id] = r; lib.current = r.id; }
 if (!lib.songs[lib.current]) lib.current = Object.values(lib.songs).sort((a, b) => b.updated-a.updated)[0].id;
 function adoptSong(r){                                           // make a stored song the live one (no audio work here)
@@ -615,7 +636,7 @@ function laneCode(ci, seq, bars){          // one lane's patterns plus its sound
 }
 function toStrudel(){
   commit();
-  const lines = ["// "+state.name+" \u00b7 made in Thumbloop", "setcps("+state.bpm+"/60/4)", ""];
+  const lines = ["// "+state.name.replace(/[^\w .,'-]/g, "")+" \u00b7 made in Thumbloop", "setcps("+state.bpm+"/60/4)", ""];
   if (state.song.length>1){                // the whole song: each distinct section once, then arranged in order
     const letters = sectionLetters(), done = new Set();
     state.song.forEach((sec, i) => {
@@ -772,9 +793,9 @@ function backupSong(){
 }
 async function importSong(file){
   try {
-    const r = JSON.parse(await file.text()).song;
-    if (!validSong(r)) return toast("that file isn't a Thumbloop song");
-    r.id = newId(); r.name = uniqueName(cleanName(r.name) || "Imported song"); r.updated = Date.now(); r.vol = (r.vol || []).slice(0, laneCount(r.sound));
+    const r = sanitizeSong(JSON.parse(await file.text()).song);
+    if (!r) return toast("that file isn't a Thumbloop song");
+    r.id = newId(); r.name = uniqueName(r.name); r.updated = Date.now();
     addSong(r); closeSongs();
   } catch(e){ toast("couldn't read that file"); }
 }
