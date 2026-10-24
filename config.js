@@ -51,15 +51,15 @@ const SOUNDS = {
     {name:"Percussion", color:"#9be8c6", kind:"noise", vol:.55, strudel:'.bank("RolandTR909").gain(.6)'}]},
 };
 const CHANNELS = SOUNDS.nes.lanes.map(c => ({...c}));     // mutated in place by applySound() so every reference stays valid
-const DRUMS = [  // key -> TR-909 hit (synth fallback while samples load)
-  {id:"bd", key:"a", label:"kick",       filter:"lowpass",  freq:260,  dur:.16, level:1.0},
-  {id:"sd", key:"s", label:"snare",      filter:"bandpass", freq:1800, dur:.13, level:.8},
-  {id:"hh", key:"d", label:"hat",        filter:"highpass", freq:7000, dur:.04, level:.5},
-  {id:"oh", key:"f", label:"open hat",   filter:"highpass", freq:6000, dur:.22, level:.45},
-  {id:"cp", key:"g", label:"clap",       filter:"bandpass", freq:1200, dur:.16, level:.8},
-  {id:"rim", key:"h", label:"rim",       filter:"highpass", freq:3000, dur:.04, level:.6},
-  {id:"lt", key:"j", label:"low tom",    filter:"lowpass",  freq:180,  dur:.25, level:.9},
-  {id:"ht", key:"k", label:"high tom",   filter:"lowpass",  freq:320,  dur:.2,  level:.8},
+const DRUMS = [  // key -> TR-909 hit (synth fallback while samples load); gm = General MIDI drum note for the .mid export
+  {id:"bd", gm:36, key:"a", label:"kick",       filter:"lowpass",  freq:260,  dur:.16, level:1.0},
+  {id:"sd", gm:38, key:"s", label:"snare",      filter:"bandpass", freq:1800, dur:.13, level:.8},
+  {id:"hh", gm:42, key:"d", label:"hat",        filter:"highpass", freq:7000, dur:.04, level:.5},
+  {id:"oh", gm:46, key:"f", label:"open hat",   filter:"highpass", freq:6000, dur:.22, level:.45},
+  {id:"cp", gm:39, key:"g", label:"clap",       filter:"bandpass", freq:1200, dur:.16, level:.8},
+  {id:"rim", gm:37, key:"h", label:"rim",       filter:"highpass", freq:3000, dur:.04, level:.6},
+  {id:"lt", gm:45, key:"j", label:"low tom",    filter:"lowpass",  freq:180,  dur:.25, level:.9},
+  {id:"ht", gm:50, key:"k", label:"high tom",   filter:"lowpass",  freq:320,  dur:.2,  level:.8},
 ];
 const PIANO = {a:0,w:1,s:2,e:3,d:4,f:5,t:6,g:7,y:8,h:9,u:10,j:11,k:12,o:13,l:14,p:15,";":16};
 const NOTE_NAMES = ["c","c#","d","d#","e","f","f#","g","g#","a","a#","b"];

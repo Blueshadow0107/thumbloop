@@ -28,6 +28,20 @@ left (or **Ctrl+O**) to see all your songs: open, rename, duplicate, delete, or 
 Browser storage can be wiped, so **Ctrl+S** (or *Save backup file*) downloads the current song as a small `.json` file,
 and *Open file* loads one back.
 
+## Where things live
+
+It's plain scripts, no build step, so it still opens by double-click.
+
+| File | What's in it |
+|---|---|
+| `config.js` | **The one to edit**: sound sets, drums, piano keys, every key and button binding |
+| `audio.js` | the output chain, voices and drums |
+| `songs.js` | the song library, saving, cleaning imported songs |
+| `play.js` | playback, undo, bar selection, every action |
+| `input.js` | keyboard and gamepad handling |
+| `export.js` | Strudel and MIDI export |
+| `index.html` | the page, its styles, the UI and the drawing code |
+
 ## Sound sets
 
 | Set | Lanes | Feel |
@@ -95,6 +109,10 @@ for the controller, `DO` for what each action does). Change a key there and the 
 **Export to Strudel** (or `V`) turns your song into [Strudel](https://strudel.cc) code: one `stack(...)` per
 distinct section, then an `arrange(...)` of the whole song. Paste it into Strudel, or use the **Open in Strudel**
 button. Strudel's own sounds are used there, so it will sound a little different (usually richer).
+
+The export window also has **Download .mid**: a standard MIDI file with one track per lane, the sections in order, and
+the drums on channel 10 (General MIDI). Open it in any DAW or synth. Chords are written as simultaneous notes, and the
+sounds are whatever your synth gives the tracks (the notes carry over, the NES/lofi voices don't).
 
 **Record audio** saves what you hear as a `.webm` file, if you want to share a track.
 

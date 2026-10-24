@@ -109,9 +109,9 @@ a.btn:hover{border-color:var(--accent)}
   <input type="file" id="sFile" accept=".json,application/json" hidden>
 </div></div>
 <div id="modal"><div class="box">
-  <div>Strudel code &mdash; paste it into strudel.cc, or open it directly.</div>
+  <div>Strudel code &mdash; paste it into strudel.cc, or open it directly. The .mid file has one track per lane.</div>
   <textarea id="code" readonly></textarea>
-  <div class="row"><button id="bCopy">Copy</button><a id="bOpen" class="btn" target="_blank" rel="noopener">Open in Strudel</a><button id="bClose">Close</button></div>
+  <div class="row"><button id="bCopy">Copy</button><a id="bOpen" class="btn" target="_blank" rel="noopener">Open in Strudel</a><a id="bMid" class="btn">Download .mid</a><button id="bClose">Close</button></div>
 </div></div>
 <div id="lock">Click anywhere or press a key<br>to turn the sound on</div>
 <div id="toast"></div>
@@ -156,6 +156,9 @@ const $ = id => document.getElementById(id);
 function openModal(){
   const code = toStrudel(); $("code").value = code;
   $("bOpen").href = "https://strudel.cc/#"+encodeURIComponent(btoa(unescape(encodeURIComponent(code))));
+  URL.revokeObjectURL($("bMid").href);
+  $("bMid").href = URL.createObjectURL(new Blob([toMidi()], {type:"audio/midi"}));
+  $("bMid").download = (state.name.replace(/[^\w .,'-]/g, "").trim() || "thumbloop")+".mid";
   $("modal").classList.add("show");
 }
 function closeModal(){ $("modal").classList.remove("show"); }

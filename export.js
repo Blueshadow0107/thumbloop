@@ -56,3 +56,37 @@ function toStrudel(){
   if (lines.length<=3) lines.push("// nothing recorded yet: hit R and play");
   return lines.join("\n");
 }
+
+// ---------- MIDI file: one track per lane, the sections in order ----------
+function toMidi(){
+  commit();
+  const PPQ = 96, STEP = PPQ/4;                                   // a step is a 16th note
+  const be = (n, bytes) => Array.from({length:bytes}, (_, i) => (n >> 8*(bytes-1-i)) & 255);
+  const vlq = n => { const o = [n & 127]; while ((n >>= 7)) o.unshift((n & 127) | 128); return o; };
+  const text = (type, s) => [0xFF, type, ...vlq(s.length), ...Array.from(s, ch => ch.charCodeAt(0) & 127)];
+  const track = events => {                                      // events: {tick, off, bytes}; note-offs first at the same tick
+    events.sort((a, b) => a.tick-b.tick || b.off-a.off);
+    let last = 0; const out = [];
+    events.forEach(ev => { out.push(...vlq(ev.tick-last), ...ev.bytes); last = ev.tick; });
+    out.push(0, 0xFF, 0x2F, 0);
+    return [0x4D,0x54,0x72,0x6B, ...be(out.length, 4), ...out];
+  };
+  const mpqn = Math.round(60e6/state.bpm);
+  const tracks = [track([{tick:0, off:0, bytes:text(0x03, state.name.replace(/[^\w .,'-]/g, ""))}, {tick:0, off:0, bytes:[0xFF,0x51,3, ...be(mpqn, 3)]}])];
+  CHANNELS.forEach((c, ci) => {
+    const drums = c.kind==="noise", ch = drums ? 9 : (ci < 9 ? ci : ci+1) & 15, ev = [], vel = Math.max(1, Math.min(127, Math.round(90*state.vol[ci])));
+    let at = 0;
+    state.song.forEach(sec => {
+      const steps = sec.bars*BAR;
+      for (let i=0;i<steps;i++) entriesAt(sec.lanes[ci][i]).forEach(n => {
+        const notes = n.drum ? [DRUMS.find(d => d.id===n.drum).gm] : n.chord ? n.chord.map(x => n.note+x) : [n.note];
+        const len = n.drum ? 1 : Math.max(1, Math.min(n.len || 1, steps-i)), t0 = (at+i)*STEP;
+        notes.forEach(m => { m = Math.max(0, Math.min(127, m));
+          ev.push({tick:t0, off:0, bytes:[0x90|ch, m, vel]}, {tick:t0+(n.drum ? STEP/2 : len*STEP), off:1, bytes:[0x80|ch, m, 0]}); });
+      });
+      at += steps;
+    });
+    if (ev.length) tracks.push(track([{tick:0, off:0, bytes:text(0x03, c.name)}, ...ev]));
+  });
+  return new Uint8Array([0x4D,0x54,0x68,0x64, ...be(6, 4), ...be(1, 2), ...be(tracks.length, 2), ...be(PPQ, 2), ...tracks.flat()]);
+}
